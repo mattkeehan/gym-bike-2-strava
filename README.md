@@ -1,14 +1,15 @@
 # Gym Bike to Strava
 
-Convert photos of stationary bike workout screens into Strava-uploadable TCX files with inferred power data.
+Convert photos of stationary bike workout screens into Strava-uploadable TCX files with inferred power data and direct upload to Strava.
 
 ## Features
 
 - 📸 Upload workout screen photos
 - 🔍 OCR text extraction using Tesseract.js
 - 📊 Parse workout metrics (duration, watts, cadence)
-- 📈 **NEW: Extract power-over-time from workout graphs**
+- 📈 Extract power-over-time from workout graphs
 - 🎯 Infer realistic power traces from graph images
+- 🔗 **NEW: Direct upload to Strava via OAuth**
 - 📥 Generate and download Strava-compatible TCX files
 
 ## Getting Started
@@ -17,6 +18,32 @@ Convert photos of stationary bike workout screens into Strava-uploadable TCX fil
 
 ```bash
 npm install
+```
+
+### Strava API Setup
+
+To enable direct upload to Strava:
+
+1. Go to [https://www.strava.com/settings/api](https://www.strava.com/settings/api)
+2. Create a new application with these settings:
+   - **Application Name**: Your app name (e.g., "Gym Bike Converter")
+   - **Category**: Training
+   - **Website**: Your domain (for local dev: `http://localhost:3000`)
+   - **Authorization Callback Domain**: Your domain without protocol
+     - For local development: `localhost`
+     - For production: `your-domain.com` (without `https://`)
+3. Copy your **Client ID** and **Client Secret**
+4. Create a `.env.local` file in the project root:
+
+```bash
+cp .env.local.example .env.local
+```
+
+5. Edit `.env.local` and add your credentials:
+
+```
+STRAVA_CLIENT_ID=your_client_id_here
+STRAVA_CLIENT_SECRET=your_client_secret_here
 ```
 
 ### Development
@@ -36,13 +63,15 @@ npm start
 
 ## Usage
 
-### Basic Workflow
+### Quick Start
 
-1. Take a photo of your bike's workout screen
-2. Upload the image using the "Choose Image" button
-3. Click "Extract Workout" to process the image with OCR
-4. Review the extracted metrics (duration, watts, cadence)
-5. *(Optional)* Manually edit any incorrect values
+1. **(Optional)** Click **"Connect to Strava"** at the top to enable direct uploads
+2. Take a photo of your bike's workout screen
+3. Upload the image using the "Choose Image" button
+4. Click "Extract Workout" to process the image with OCR
+5. Review the extracted metrics (duration, watts, cadence)
+6. *(Optional)* Manually edit any incorrect values
+7. Click **"Send to Strava"** (if connected) or **"Download TCX"**
 
 ### Advanced: Infer Power Trace from Graph
 
@@ -83,8 +112,92 @@ vercel
 
 - **Framework**: Next.js 14
 - **Language**: TypeScript
-- **OCR**: Tesseract.js
+- **OCR**: Tesseract.js (client-side)
+- **Image Processing**: sharp (server-side for graph extraction)
+- **Authentication**: Strava OAuth2 (activity:write scope)
+- **Storage**: File-based token storage (MVP - can be upgraded to database)
 - **Deployment**: Vercel
+
+## How It Works
+
+### Power Graph Extraction
+
+1. User selects a region of their image containing the power graph
+2. Image is sent to server-side API route (`/api/extract-graph`)
+3. Sharp library crops the image to the selected region
+4. Blue pixels are detected and plotted to trace the graph line
+5. Missing points are interpolated and smoothed
+6. Graph is converted to power samples using workout metadata
+7. TCX file includes realistic per-second power data
+
+### Strava Integration
+
+1. User clicks "Connect to Strava"
+2. OAuth flow redirects to Strava for authorization
+3. App requests `activity:write` scope
+4. Tokens are stored securely (file-based for MVP)
+5. Tokens automatically refresh when expired
+6. Upload uses Strava's multipart/form-data upload endpoint
+7. Status polling checks for processing completion
+
+## Production Considerations
+
+When deploying to production:
+
+1. **Update Strava API Settings**:
+   - Add your production domain to "Authorization Callback Domain"
+   - Update "Website" field with your production URL
+
+2. **Environment Variables**:
+   - Set `STRAVA_CLIENT_ID` and `STRAVA_CLIENT_SECRET` in your hosting platform
+
+3. **Token Storage** (recommended for production):
+   - Replace file-based storage in `lib/strava-auth.ts` with a database
+   - Look for `// TODO: Replace with database storage` comments
+   - Suggested: PostgreSQL, MongoDB, or your preferred database
+
+4. **Security**:
+   - Ensure `.env.local` and `.strava-tokens.json` are in `.gitignore`
+   - Use environment variables for all secrets
+   - Consider adding user authentication to protect stored tokens
+
+## Deploy to Vercel
+
+1. Push your code to GitHub
+2. Import your repository on Vercel
+3. Add environment variables in Vercel dashboard:
+   - `STRAVA_CLIENT_ID`
+   - `STRAVA_CLIENT_SECRET`
+4. Update Strava API settings with your Vercel domain
+5. Deploy!
+
+Or use the deploy button:
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/yourusername/gym-bike-2-strava)
+
+## Troubleshooting
+
+### "Could not parse workout metrics"
+
+- OCR may have had difficulty reading the text
+- Try retaking the photo with better lighting
+- Use the manual entry form to input values directly
+
+### "Missing required scope: activity:write"
+
+- When connecting to Strava, ensure you authorize the "Upload activities" permission
+- Disconnect and reconnect if needed
+
+### "Strava connection expired"
+
+- Click "Connect to Strava" again to re-authorize
+- Tokens automatically refresh but may expire after extended inactivity
+
+### Power graph extraction issues
+
+- Ensure you select only the graph area (not axes or labels)
+- Works best with bright blue/cyan graph lines
+- Try adjusting the crop box if results are inaccurate
 
 ## License
 

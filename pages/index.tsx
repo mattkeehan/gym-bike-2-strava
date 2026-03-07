@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import Head from 'next/head';
 import { extractTextFromImage } from '../lib/ocr';
 import { parseWorkoutMetrics } from '../lib/parser';
@@ -82,6 +82,42 @@ export default function Home() {
   const [editAvgWatts, setEditAvgWatts] = useState('');
   const [editMaxCadence, setEditMaxCadence] = useState('');
   const [editAvgCadence, setEditAvgCadence] = useState('');
+  
+  // Strava integration state
+  const [stravaConnected, setStravaConnected] = useState(false);
+  const [uploadingToStrava, setUploadingToStrava] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<string>('');
+
+  // Check if connected to Strava on mount
+  useEffect(() => {
+    // Check for OAuth callback status
+    const params = new URLSearchParams(window.location.search);
+    const stravaStatus = params.get('strava');
+    const stravaMessage = params.get('message');
+    
+    if (stravaStatus === 'connected') {
+      setStravaConnected(true);
+      setUploadStatus('✓ Successfully connected to Strava!');
+      // Clean up URL
+      window.history.replaceState({}, '', '/');
+    } else if (stravaStatus === 'error') {
+      setError(`Strava connection failed: ${stravaMessage || 'unknown error'}`);
+      // Clean up URL
+      window.history.replaceState({}, '', '/');
+    } else {
+      // Check existing connection
+      fetch('/api/strava/callback?check=true')
+        .then(res => res.json())
+        .then(data => {
+          if (data.connected) {
+            setStravaConnected(true);
+          }
+        })
+        .catch(() => {
+          // Silently fail - not connected
+        });
+    }
+  }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -288,6 +324,92 @@ export default function Home() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
+  
+  const handleConnectStrava = () => {
+    // Redirect to OAuth flow
+    window.location.href = '/api/strava/connect';
+  };
+  
+  const handleUploadToStrava = async () => {
+    if (!metrics || !stravaConnected) return;
+
+    setUploadingToStrava(true);
+    setUploadStatus('Preparing upload...');
+    setError('');
+
+    try {
+      const tcxContent = generateTCX(metrics);
+      const name = `Gym Bike Workout`;
+      const description = `Duration: ${Math.floor(metrics.durationSeconds / 60)}:${(metrics.durationSeconds % 60).toString().padStart(2, '0')} | Avg: ${metrics.avgWatts}W | Max: ${metrics.maxWatts}W`;
+
+      const response = await fetch('/api/strava/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tcxContent,
+          name,
+          description,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        if (data.code === 'NOT_CONNECTED') {
+          setStravaConnected(false);
+          throw new Error('Strava connection expired. Please reconnect.');
+        }
+        throw new Error(data.error || 'Upload failed');
+      }
+
+      setUploadStatus('Upload initiated! Processing...');
+
+      // Poll for status
+      let attempts = 0;
+      const maxAttempts = 30; // 30 seconds max
+      const uploadId = data.upload.id;
+
+      const pollStatus = async () => {
+        attempts++;
+        
+        const statusResponse = await fetch(`/api/strava/upload-status?uploadId=${uploadId}`);
+        const statusData = await statusResponse.json();
+
+        if (!statusResponse.ok) {
+          throw new Error(statusData.error || 'Status check failed');
+        }
+
+        const status = statusData.status;
+
+        if (status.activity_id) {
+          // Success!
+          setUploadStatus(`✓ Uploaded! View on Strava: strava.com/activities/${status.activity_id}`);
+          setUploadingToStrava(false);
+          return;
+        }
+
+        if (status.error) {
+          throw new Error(`Strava error: ${status.error}`);
+        }
+
+        if (attempts >= maxAttempts) {
+          setUploadStatus('Upload is taking longer than expected. Check your Strava account.');
+          setUploadingToStrava(false);
+          return;
+        }
+
+        // Still processing, check again in 1 seconds
+        setTimeout(pollStatus, 1000);
+      };
+
+      setTimeout(pollStatus, 1000);
+
+    } catch (err: any) {
+      setError(err.message || 'Failed to upload to Strava');
+      setUploadingToStrava(false);
+      setUploadStatus('');
+    }
+  };
 
   return (
     <>
@@ -302,6 +424,19 @@ export default function Home() {
         <p style={styles.subtitle}>
           Upload a photo of your workout screen and convert it to a Strava-compatible TCX file
         </p>
+        
+        {/* Strava connection status */}
+        <div style={styles.stravaSection}>
+          {stravaConnected ? (
+            <div style={styles.connectedBadge}>
+              ✓ Connected to Strava
+            </div>
+          ) : (
+            <button onClick={handleConnectStrava} style={styles.connectButton}>
+              Connect to Strava
+            </button>
+          )}
+        </div>
 
         <div style={styles.container}>
           <div style={styles.uploadSection}>
@@ -524,12 +659,33 @@ export default function Home() {
                 )}
               </div>
 
-              <button
-                onClick={handleDownloadTCX}
-                style={styles.downloadButton}
-              >
-                Download TCX
-              </button>
+              <div style={styles.actionButtons}>
+                <button
+                  onClick={handleDownloadTCX}
+                  style={styles.downloadButton}
+                >
+                  Download TCX
+                </button>
+                
+                {stravaConnected && (
+                  <button
+                    onClick={handleUploadToStrava}
+                    disabled={uploadingToStrava}
+                    style={{
+                      ...styles.stravaButton,
+                      ...(uploadingToStrava && styles.buttonDisabled),
+                    }}
+                  >
+                    {uploadingToStrava ? 'Uploading...' : 'Send to Strava'}
+                  </button>
+                )}
+              </div>
+              
+              {uploadStatus && (
+                <div style={styles.uploadStatus}>
+                  {uploadStatus}
+                </div>
+              )}
             </div>
           )}
 
@@ -778,5 +934,55 @@ const styles: { [key: string]: React.CSSProperties } = {
   chartContainer: {
     marginTop: '1rem',
     overflowX: 'auto',
+  },
+  stravaSection: {
+    maxWidth: '600px',
+    margin: '0 auto 2rem',
+    textAlign: 'center',
+  },
+  connectButton: {
+    padding: '0.75rem 2rem',
+    fontSize: '1rem',
+    fontWeight: 'bold',
+    color: 'white',
+    backgroundColor: '#FC4C02',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+  },
+  connectedBadge: {
+    display: 'inline-block',
+    padding: '0.75rem 2rem',
+    fontSize: '1rem',
+    fontWeight: 'bold',
+    color: '#2e7d32',
+    backgroundColor: '#e8f5e9',
+    border: '2px solid #4caf50',
+    borderRadius: '4px',
+  },
+  actionButtons: {
+    display: 'flex',
+    gap: '1rem',
+    marginTop: '1rem',
+  },
+  stravaButton: {
+    flex: 1,
+    padding: '1rem',
+    fontSize: '1rem',
+    fontWeight: 'bold',
+    color: 'white',
+    backgroundColor: '#FC4C02',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+  },
+  uploadStatus: {
+    marginTop: '1rem',
+    padding: '1rem',
+    backgroundColor: '#e3f2fd',
+    color: '#1565c0',
+    borderRadius: '4px',
+    fontSize: '0.875rem',
+    textAlign: 'center',
   },
 };
