@@ -18,6 +18,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: 'Missing or invalid uploadId' });
     }
 
+    // Parse uploadId to number
+    const uploadIdNum = parseInt(uploadId, 10);
+    if (isNaN(uploadIdNum)) {
+      return res.status(400).json({ error: 'Invalid uploadId format' });
+    }
+
     // Get valid tokens
     const tokens = await getValidStravaTokens();
 
@@ -29,7 +35,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // Check status
-    const status = await checkUploadStatus(tokens.access_token, uploadId);
+    const status = await checkUploadStatus(tokens.access_token, uploadIdNum);
 
     return res.status(200).json({
       success: true,
