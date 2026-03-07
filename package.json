@@ -1,0 +1,12 @@
+{
+  "name": "gym-bike-2-strava",
+  "version": "1.0.0",
+  "description": "upload a photo from a gym bike workout and capture the details, enable download of a Strava formatted file that can be uploaded",
+  "license": "ISC",
+  "author": "Matt Keehan",
+  "type": "commonjs",
+  "main": "index.ts",
+  "scripts": {
+    "test": "test"
+  }
+}
