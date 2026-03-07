@@ -4,4 +4,10 @@ export interface WorkoutMetrics {
   maxWatts: number;
   avgCadence?: number;
   maxCadence?: number;
+  powerSeries?: PowerSample[]; // Inferred power over time
+}
+
+export interface PowerSample {
+  time: number; // seconds from start
+  watts: number;
 }

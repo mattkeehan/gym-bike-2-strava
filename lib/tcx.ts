@@ -4,47 +4,70 @@ export function generateTCX(metrics: WorkoutMetrics): string {
   const now = new Date();
   const startTime = new Date(now.getTime() - metrics.durationSeconds * 1000);
   
-  // Generate trackpoints every 10 seconds throughout the workout
-  const trackpointInterval = 10; // seconds
-  const numTrackpoints = Math.floor(metrics.durationSeconds / trackpointInterval);
-  
   let trackpoints = '';
   
-  for (let i = 0; i <= numTrackpoints; i++) {
-    const timeOffset = i * trackpointInterval;
-    const pointTime = new Date(startTime.getTime() + timeOffset * 1000).toISOString();
-    
-    // Vary power throughout workout - create realistic variation
-    // Put max power around 20-30% through the workout
-    const progressRatio = i / numTrackpoints;
-    let watts: number;
-    let cadence: number | undefined;
-    
-    if (progressRatio < 0.1) {
-      // Warmup - lower power
-      watts = Math.round(metrics.avgWatts * 0.7);
-      cadence = metrics.avgCadence ? Math.round(metrics.avgCadence * 0.8) : undefined;
-    } else if (progressRatio >= 0.2 && progressRatio <= 0.3) {
-      // Peak effort - max power zone
-      watts = Math.round(metrics.avgWatts + (metrics.maxWatts - metrics.avgWatts) * (Math.random() * 0.5 + 0.5));
-      cadence = metrics.maxCadence ? Math.round(metrics.maxCadence * (Math.random() * 0.2 + 0.8)) : metrics.avgCadence;
-    } else if (progressRatio > 0.9) {
-      // Cool down
-      watts = Math.round(metrics.avgWatts * 0.8);
-      cadence = metrics.avgCadence ? Math.round(metrics.avgCadence * 0.85) : undefined;
-    } else {
-      // Normal variation around average
-      watts = Math.round(metrics.avgWatts + (Math.random() - 0.5) * metrics.avgWatts * 0.3);
-      cadence = metrics.avgCadence ? Math.round(metrics.avgCadence + (Math.random() - 0.5) * 15) : undefined;
+  // Use inferred power series if available, otherwise generate synthetic data
+  if (metrics.powerSeries && metrics.powerSeries.length > 0) {
+    // Use the actual inferred power data
+    for (const sample of metrics.powerSeries) {
+      const pointTime = new Date(startTime.getTime() + sample.time * 1000).toISOString();
+      
+      // Estimate cadence based on power (rough correlation)
+      let cadence: number | undefined;
+      if (metrics.avgCadence && metrics.maxCadence) {
+        const powerRatio = sample.watts / metrics.maxWatts;
+        cadence = Math.round(
+          metrics.avgCadence + (metrics.maxCadence - metrics.avgCadence) * powerRatio * 0.7
+        );
+      } else if (metrics.avgCadence) {
+        cadence = metrics.avgCadence;
+      }
+      
+      trackpoints += `
+          <Trackpoint>
+            <Time>${pointTime}</Time>
+            ${cadence ? `<Cadence>${cadence}</Cadence>` : ''}
+            <Extensions>
+              <ns3:TPX>
+                <ns3:Watts>${sample.watts}</ns3:Watts>
+              </ns3:TPX>
+            </Extensions>
+          </Trackpoint>`;
     }
+  } else {
+    // Generate synthetic trackpoints every 10 seconds
+    const trackpointInterval = 10; // seconds
+    const numTrackpoints = Math.floor(metrics.durationSeconds / trackpointInterval);
     
-    // Ensure at least one trackpoint hits the actual max watts
-    if (i === Math.floor(numTrackpoints * 0.25)) {
-      watts = metrics.maxWatts;
-      cadence = metrics.maxCadence;
-    }
-    
-    trackpoints += `
+    for (let i = 0; i <= numTrackpoints; i++) {
+      const timeOffset = i * trackpointInterval;
+      const pointTime = new Date(startTime.getTime() + timeOffset * 1000).toISOString();
+      
+      // Vary power throughout workout - create realistic variation
+      const progressRatio = i / numTrackpoints;
+      let watts: number;
+      let cadence: number | undefined;
+      
+      if (progressRatio < 0.1) {
+        watts = Math.round(metrics.avgWatts * 0.7);
+        cadence = metrics.avgCadence ? Math.round(metrics.avgCadence * 0.8) : undefined;
+      } else if (progressRatio >= 0.2 && progressRatio <= 0.3) {
+        watts = Math.round(metrics.avgWatts + (metrics.maxWatts - metrics.avgWatts) * (Math.random() * 0.5 + 0.5));
+        cadence = metrics.maxCadence ? Math.round(metrics.maxCadence * (Math.random() * 0.2 + 0.8)) : metrics.avgCadence;
+      } else if (progressRatio > 0.9) {
+        watts = Math.round(metrics.avgWatts * 0.8);
+        cadence = metrics.avgCadence ? Math.round(metrics.avgCadence * 0.85) : undefined;
+      } else {
+        watts = Math.round(metrics.avgWatts + (Math.random() - 0.5) * metrics.avgWatts * 0.3);
+        cadence = metrics.avgCadence ? Math.round(metrics.avgCadence + (Math.random() - 0.5) * 15) : undefined;
+      }
+      
+      if (i === Math.floor(numTrackpoints * 0.25)) {
+        watts = metrics.maxWatts;
+        cadence = metrics.maxCadence;
+      }
+      
+      trackpoints += `
           <Trackpoint>
             <Time>${pointTime}</Time>
             ${cadence ? `<Cadence>${cadence}</Cadence>` : ''}
@@ -54,6 +77,7 @@ export function generateTCX(metrics: WorkoutMetrics): string {
               </ns3:TPX>
             </Extensions>
           </Trackpoint>`;
+    }
   }
   
   // Calculate estimated calories (rough approximation: 1 kJ ≈ 0.239 kcal)
