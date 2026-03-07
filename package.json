@@ -4,9 +4,23 @@
   "description": "upload a photo from a gym bike workout and capture the details, enable download of a Strava formatted file that can be uploaded",
   "license": "ISC",
   "author": "Matt Keehan",
-  "type": "commonjs",
-  "main": "index.ts",
+  "private": true,
   "scripts": {
-    "test": "test"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "^14.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tesseract.js": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "typescript": "^5.0.0"
   }
 }
