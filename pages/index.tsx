@@ -426,7 +426,7 @@ export default function Home() {
       <main style={styles.main}>
         <h1 style={styles.title}>Gym Bike to Strava</h1>
         <p style={styles.subtitle}>
-          Upload a photo of your workout screen and convert it to a Strava-compatible TCX file
+          Upload a photo of your workout screen and push it straight to your Strava activities, or download a compatible TCX file
         </p>
         
         {/* Strava connection status */}
