@@ -87,6 +87,7 @@ export default function Home() {
   const [stravaConnected, setStravaConnected] = useState(false);
   const [uploadingToStrava, setUploadingToStrava] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<string>('');
+  const [stravaActivityId, setStravaActivityId] = useState<string | null>(null);
 
   // Check if connected to Strava on mount
   useEffect(() => {
@@ -383,7 +384,8 @@ export default function Home() {
 
         if (status.activity_id) {
           // Success!
-          setUploadStatus(`✓ Uploaded! View on Strava: strava.com/activities/${status.activity_id}`);
+          setUploadStatus('✓ Uploaded successfully!');
+          setStravaActivityId(status.activity_id.toString());
           setUploadingToStrava(false);
           return;
         }
@@ -408,6 +410,7 @@ export default function Home() {
       setError(err.message || 'Failed to upload to Strava');
       setUploadingToStrava(false);
       setUploadStatus('');
+      setStravaActivityId(null);
     }
   };
 
@@ -684,6 +687,19 @@ export default function Home() {
               {uploadStatus && (
                 <div style={styles.uploadStatus}>
                   {uploadStatus}
+                  {stravaActivityId && (
+                    <>
+                      {' '}
+                      <a 
+                        href={`https://www.strava.com/activities/${stravaActivityId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={styles.stravaLink}
+                      >
+                        View on Strava
+                      </a>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -984,5 +1000,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderRadius: '4px',
     fontSize: '0.875rem',
     textAlign: 'center',
+  },
+  stravaLink: {
+    color: '#FC4C02',
+    fontWeight: 'bold',
+    textDecoration: 'underline',
   },
 };
