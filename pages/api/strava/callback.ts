@@ -13,6 +13,15 @@ import { saveStravaTokens, hasRequiredScopes, getStoredStravaTokens } from '../.
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const { code, error, scope, check } = req.query;
   
+  console.log('=== STRAVA CALLBACK ===');
+  console.log('Full query params:', JSON.stringify(req.query, null, 2));
+  console.log('code:', code);
+  console.log('error:', error);
+  console.log('scope:', scope);
+  console.log('scope type:', typeof scope);
+  console.log('scope is array?:', Array.isArray(scope));
+  console.log('=======================');
+  
   // Check connection status (for client-side polling)
   if (check === 'true') {
     const tokens = await getStoredStravaTokens();
@@ -80,7 +89,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const tokenData = await tokenResponse.json();
-    console.log('Token exchange successful. Expires at:', tokenData.expires_at);
+    
+    console.log('=== TOKEN EXCHANGE SUCCESS ===');
+    console.log('Token response keys:', Object.keys(tokenData));
+    console.log('access_token (first 10 chars):', tokenData.access_token?.substring(0, 10));
+    console.log('refresh_token (first 10 chars):', tokenData.refresh_token?.substring(0, 10));
+    console.log('expires_at:', tokenData.expires_at);
+    console.log('athlete_id:', tokenData.athlete?.id);
+    console.log('scope from token response:', tokenData.scope);
+    console.log('scope we will save (from callback):', scopeParam);
+    console.log('==============================');
 
     // Save tokens with scope from callback query (not token response)
     // The token response may not include scope, but we already validated it above

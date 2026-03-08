@@ -27,7 +27,12 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
 
   const authUrl = `https://www.strava.com/oauth/authorize?${params.toString()}`;
 
-  console.log('Redirecting to Strava OAuth:', authUrl);
+  console.log('=== STRAVA CONNECT ===');
+  console.log('Client ID:', clientId);
+  console.log('Redirect URI:', redirectUri);
+  console.log('Requested scope:', 'activity:write');
+  console.log('Full auth URL:', authUrl);
+  console.log('=====================');
 
   // Redirect to Strava
   res.redirect(authUrl);
