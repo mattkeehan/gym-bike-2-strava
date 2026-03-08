@@ -9,30 +9,38 @@ export interface StravaTokens {
   scope?: string;
 }
 
-// Storage: File-based for local dev, KV for production (Vercel)
+// Storage: File-based for local dev, Upstash Redis for production (Vercel)
 const TOKENS_FILE_PATH = path.join(process.cwd(), '.strava-tokens.json');
 const IS_VERCEL = process.env.VERCEL === '1';
 
-// Lazy-load KV only in production to avoid issues in local dev
-let kv: any = null;
-async function getKV() {
-  if (!kv && IS_VERCEL) {
-    const { kv: vercelKv } = await import('@vercel/kv');
-    kv = vercelKv;
+// Lazy-load Redis only in production to avoid issues in local dev
+let redis: any = null;
+async function getRedis() {
+  if (!redis && IS_VERCEL) {
+    const { Redis } = await import('@upstash/redis');
+    // Upstash Redis uses REDIS_URL from Vercel integration
+    redis = Redis.fromEnv();
   }
-  return kv;
+  return redis;
 }
 
 /**
  * Get stored Strava tokens
- * Uses file storage for local dev, Vercel KV for production
+ * Uses file storage for local dev, Upstash Redis for production
  */
 export async function getStoredStravaTokens(): Promise<StravaTokens | null> {
   try {
     if (IS_VERCEL) {
-      // Production: Use Vercel KV
-      const kvStore = await getKV();
-      const tokens = await kvStore.get('strava_tokens');
+      // Production: Use Upstash Redis (from Vercel Storage integration)
+      if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
+        console.error('Redis environment variables not found.')
+        console.error('Expected: UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN');
+        console.error('Or: REDIS_URL');
+        console.error('Available Redis env vars:', Object.keys(process.env).filter(k => k.includes('REDIS')));
+        return null;
+      }
+      const redisClient = await getRedis();
+      const tokens = await redisClient.get('strava_tokens');
       return tokens as StravaTokens | null;
     } else {
       // Local dev: Use file storage
@@ -40,25 +48,31 @@ export async function getStoredStravaTokens(): Promise<StravaTokens | null> {
       return JSON.parse(data) as StravaTokens;
     }
   } catch (error) {
-    // File/key doesn't exist or can't be read
+    console.error('Error getting tokens:', error);
     return null;
   }
 }
 
 /**
  * Save Strava tokens
- * Uses file storage for local dev, Vercel KV for production
+ * Uses file storage for local dev, Upstash Redis for production
  */
 export async function saveStravaTokens(tokens: StravaTokens): Promise<void> {
   if (IS_VERCEL) {
-    // Production: Use Vercel KV
-    const kvStore = await getKV();
-    await kvStore.set('strava_tokens', tokens);
-    console.log('Tokens saved to Vercel KV');
+    // Production: Use Upstash Redis
+    if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
+      console.error('❌ Redis environment variables not found!');
+      console.error('Expected: UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN');
+      console.error('Available Redis env vars:', Object.keys(process.env).filter(k => k.includes('REDIS')));
+      throw new Error('Redis not configured. Go to Vercel project → Storage → Connect a Redis database.');
+    }
+    const redisClient = await getRedis();
+    await redisClient.set('strava_tokens', tokens);
+    console.log('✅ Tokens saved to Upstash Redis');
   } else {
     // Local dev: Use file storage
     await fs.writeFile(TOKENS_FILE_PATH, JSON.stringify(tokens, null, 2), 'utf-8');
-    console.log('Tokens saved to local file');
+    console.log('✅ Tokens saved to local file');
   }
 }
 
