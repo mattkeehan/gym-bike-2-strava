@@ -9,30 +9,57 @@ export interface StravaTokens {
   scope?: string;
 }
 
-// MVP: File-based storage
-// TODO: Replace with database when scaling to multi-user
+// Storage: File-based for local dev, KV for production (Vercel)
 const TOKENS_FILE_PATH = path.join(process.cwd(), '.strava-tokens.json');
+const IS_VERCEL = process.env.VERCEL === '1';
+
+// Lazy-load KV only in production to avoid issues in local dev
+let kv: any = null;
+async function getKV() {
+  if (!kv && IS_VERCEL) {
+    const { kv: vercelKv } = await import('@vercel/kv');
+    kv = vercelKv;
+  }
+  return kv;
+}
 
 /**
- * Get stored Strava tokens from file system
- * For MVP single-user storage. Replace with DB query for multi-user.
+ * Get stored Strava tokens
+ * Uses file storage for local dev, Vercel KV for production
  */
 export async function getStoredStravaTokens(): Promise<StravaTokens | null> {
   try {
-    const data = await fs.readFile(TOKENS_FILE_PATH, 'utf-8');
-    return JSON.parse(data) as StravaTokens;
+    if (IS_VERCEL) {
+      // Production: Use Vercel KV
+      const kvStore = await getKV();
+      const tokens = await kvStore.get('strava_tokens');
+      return tokens as StravaTokens | null;
+    } else {
+      // Local dev: Use file storage
+      const data = await fs.readFile(TOKENS_FILE_PATH, 'utf-8');
+      return JSON.parse(data) as StravaTokens;
+    }
   } catch (error) {
-    // File doesn't exist or can't be read
+    // File/key doesn't exist or can't be read
     return null;
   }
 }
 
 /**
- * Save Strava tokens to file system
- * For MVP single-user storage. Replace with DB insert/update for multi-user.
+ * Save Strava tokens
+ * Uses file storage for local dev, Vercel KV for production
  */
 export async function saveStravaTokens(tokens: StravaTokens): Promise<void> {
-  await fs.writeFile(TOKENS_FILE_PATH, JSON.stringify(tokens, null, 2), 'utf-8');
+  if (IS_VERCEL) {
+    // Production: Use Vercel KV
+    const kvStore = await getKV();
+    await kvStore.set('strava_tokens', tokens);
+    console.log('Tokens saved to Vercel KV');
+  } else {
+    // Local dev: Use file storage
+    await fs.writeFile(TOKENS_FILE_PATH, JSON.stringify(tokens, null, 2), 'utf-8');
+    console.log('Tokens saved to local file');
+  }
 }
 
 /**
