@@ -420,6 +420,7 @@ export default function Home() {
         <title>Gym Bike to Strava</title>
         <meta name="description" content="Convert bike workout photos to Strava TCX files" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link rel="icon" type="image/png" href="/favicon.png" />
       </Head>
 
       <main style={styles.main}>
