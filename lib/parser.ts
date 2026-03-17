@@ -40,35 +40,74 @@ function detectWorkoutType(text: string): WorkoutType {
 }
 
 function parseRunWorkout(text: string): WorkoutMetrics | null {
-  // Extract duration (mm:ss format)
-  const durationMatch = text.match(/(\d{1,3}):(\d{2})/);
-  if (!durationMatch) {
+  // Extract duration - be very flexible with format
+  // Look for any pattern like XX:XX that could be duration
+  const allTimePatterns = Array.from(text.matchAll(/(\d{1,3}):(\d{2})/g));
+  
+  if (allTimePatterns.length === 0) {
     throw new Error('Duration not found in text');
   }
+  
+  // The longest time value is likely the duration (45:09 is longer than 10:55)
+  let durationMatch = allTimePatterns[0];
+  for (const match of allTimePatterns) {
+    const mins = parseInt(match[1], 10);
+    const currentDuration = mins * 60 + parseInt(match[2], 10);
+    const prevDuration = parseInt(durationMatch[1], 10) * 60 + parseInt(durationMatch[2], 10);
+    if (currentDuration > prevDuration) {
+      durationMatch = match;
+    }
+  }
+  
   const minutes = parseInt(durationMatch[1], 10);
   const seconds = parseInt(durationMatch[2], 10);
   const durationSeconds = minutes * 60 + seconds;
 
-  // Extract pace (mm:ss format, typically labeled as "pace" or "avg. pace")
-  // Look for patterns like "10:55 min/km" or just "10:55" near "pace"
+  // Extract pace - look for remaining time patterns (should be shorter than duration)
   let avgPaceSeconds: number | undefined;
-  const paceMatch = text.match(/(?:pace|PACE)[\s\S]*?(\d{1,2}):(\d{2})/i);
-  if (paceMatch) {
-    const paceMinutes = parseInt(paceMatch[1], 10);
-    const paceSeconds = parseInt(paceMatch[2], 10);
-    avgPaceSeconds = paceMinutes * 60 + paceSeconds;
+  for (const match of allTimePatterns) {
+    const mins = parseInt(match[1], 10);
+    const secs = parseInt(match[2], 10);
+    const timeValue = mins * 60 + secs;
+    
+    // Pace is typically 3-20 minutes per km, duration should be longer
+    if (timeValue < durationSeconds && mins >= 3 && mins <= 20) {
+      avgPaceSeconds = timeValue;
+      break;
+    }
   }
 
-  // Extract calories
+  // Extract calories - look for 2-4 digit numbers (not part of time)
   let calories: number | undefined;
-  const caloriesMatch = text.match(/(\d{2,4})\s*(?:kcal|cal|calories)/i);
-  if (caloriesMatch) {
-    calories = parseInt(caloriesMatch[1], 10);
+  const lines = text.split('\n');
+  for (const line of lines) {
+    const upperLine = line.toUpperCase();
+    if (upperLine.includes('CALOR') || upperLine.includes('KCAL') || upperLine.includes('CAL')) {
+      // Find numbers in this line
+      const numbers = Array.from(line.matchAll(/\b(\d{2,4})\b/g))
+        .map(m => parseInt(m[1], 10))
+        .filter(n => n >= 50 && n <= 9999); // Reasonable calorie range
+      
+      if (numbers.length > 0) {
+        calories = numbers[0];
+        break;
+      }
+    }
+  }
+  
+  // If we didn't find calories with context, look for any 3-digit number
+  if (!calories) {
+    const allNumbers = Array.from(text.matchAll(/\b(\d{3})\b/g))
+      .map(m => parseInt(m[1], 10))
+      .filter(n => n >= 100 && n <= 999);
+    if (allNumbers.length > 0) {
+      calories = allNumbers[0];
+    }
   }
 
   // Calculate distance from duration and pace if we have pace
   let distanceKm: number | undefined;
-  if (avgPaceSeconds) {
+  if (avgPaceSeconds && avgPaceSeconds > 0) {
     // distance (km) = duration (seconds) / pace (seconds per km)
     distanceKm = durationSeconds / avgPaceSeconds;
   }
