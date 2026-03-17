@@ -41,34 +41,69 @@ function detectWorkoutType(text: string): WorkoutType {
 
 function parseRunWorkout(text: string): WorkoutMetrics | null {
   // Extract duration - be very flexible with format
-  // Look for any pattern like XX:XX that could be duration
-  const allTimePatterns = Array.from(text.matchAll(/(\d{1,3}):(\d{2})/g));
+  // Look for any pattern like XX:XX or XX:X (OCR might miss digits)
+  const timePatterns: Array<{ mins: string; secs: string }> = [];
   
-  if (allTimePatterns.length === 0) {
+  // Get time patterns from main text
+  const matches = Array.from(text.matchAll(/(\d{1,3}):(\d{1,2})/g));
+  for (const match of matches) {
+    timePatterns.push({ mins: match[1], secs: match[2] });
+  }
+  
+  // Also look for "Extracted numbers" line which might have split time values
+  const extractedLine = text.match(/Extracted numbers:\s*(.+)/i);
+  if (extractedLine) {
+    const extractedNumbers = extractedLine[1].split(',').map(s => s.trim()).filter(s => s);
+    
+    // Try to reconstruct time patterns from consecutive numbers
+    // e.g., "10, 55" could be "10:55"
+    for (let i = 0; i < extractedNumbers.length - 1; i++) {
+      const num1 = extractedNumbers[i];
+      const num2 = extractedNumbers[i + 1];
+      
+      // Check if these could form a time pattern (X:XX or XX:XX)
+      if (/^\d{1,3}$/.test(num1) && /^\d{2}$/.test(num2)) {
+        timePatterns.push({ mins: num1, secs: num2 });
+      }
+    }
+  }
+  
+  if (timePatterns.length === 0) {
     // No time patterns found - can't parse
     return null;
   }
   
   // The longest time value is likely the duration (45:09 is longer than 10:55)
-  let durationMatch = allTimePatterns[0];
-  for (const match of allTimePatterns) {
-    const mins = parseInt(match[1], 10);
-    const currentDuration = mins * 60 + parseInt(match[2], 10);
-    const prevDuration = parseInt(durationMatch[1], 10) * 60 + parseInt(durationMatch[2], 10);
+  let durationPattern = timePatterns[0];
+  for (const pattern of timePatterns) {
+    const mins = parseInt(pattern.mins, 10);
+    // Pad seconds to 2 digits if needed (e.g., "45:0" becomes 45:00)
+    const secsStr = pattern.secs.padEnd(2, '0');
+    const secs = parseInt(secsStr, 10);
+    const currentDuration = mins * 60 + secs;
+    
+    const prevMins = parseInt(durationPattern.mins, 10);
+    const prevSecsStr = durationPattern.secs.padEnd(2, '0');
+    const prevSecs = parseInt(prevSecsStr, 10);
+    const prevDuration = prevMins * 60 + prevSecs;
+    
     if (currentDuration > prevDuration) {
-      durationMatch = match;
+      durationPattern = pattern;
     }
   }
   
-  const minutes = parseInt(durationMatch[1], 10);
-  const seconds = parseInt(durationMatch[2], 10);
+  const minutes = parseInt(durationPattern.mins, 10);
+  // Pad seconds if OCR missed a digit (e.g., "45:0" -> "45:00")
+  const secondsStr = durationPattern.secs.padEnd(2, '0');
+  const seconds = parseInt(secondsStr, 10);
   const durationSeconds = minutes * 60 + seconds;
 
   // Extract pace - look for remaining time patterns (should be shorter than duration)
   let avgPaceSeconds: number | undefined;
-  for (const match of allTimePatterns) {
-    const mins = parseInt(match[1], 10);
-    const secs = parseInt(match[2], 10);
+  for (const pattern of timePatterns) {
+    const mins = parseInt(pattern.mins, 10);
+    const secsStr = pattern.secs.padEnd(2, '0');
+    const secs = parseInt(secsStr, 10);
     const timeValue = mins * 60 + secs;
     
     // Pace is typically 3-20 minutes per km, duration should be longer
