@@ -83,6 +83,12 @@ export default function Home() {
   const [editMaxCadence, setEditMaxCadence] = useState('');
   const [editAvgCadence, setEditAvgCadence] = useState('');
   
+  // Run-specific fields
+  const [editPace, setEditPace] = useState('');
+  const [editCalories, setEditCalories] = useState('');
+  const [editDistance, setEditDistance] = useState('');
+  const [editWorkoutType, setEditWorkoutType] = useState<'bike' | 'run'>('bike');
+  
   // Strava integration state
   const [stravaConnected, setStravaConnected] = useState(false);
   const [uploadingToStrava, setUploadingToStrava] = useState(false);
@@ -175,10 +181,20 @@ export default function Home() {
     const mins = Math.floor(m.durationSeconds / 60);
     const secs = m.durationSeconds % 60;
     setEditDuration(`${mins}:${secs.toString().padStart(2, '0')}`);
-    setEditMaxWatts(m.maxWatts.toString());
-    setEditAvgWatts(m.avgWatts.toString());
-    setEditMaxCadence(m.maxCadence?.toString() || '');
-    setEditAvgCadence(m.avgCadence?.toString() || '');
+    setEditWorkoutType(m.type);
+    
+    if (m.type === 'bike') {
+      setEditMaxWatts(m.maxWatts?.toString() || '');
+      setEditAvgWatts(m.avgWatts?.toString() || '');
+      setEditMaxCadence(m.maxCadence?.toString() || '');
+      setEditAvgCadence(m.avgCadence?.toString() || '');
+    } else {
+      const paceMins = Math.floor((m.avgPaceSeconds || 0) / 60);
+      const paceSecs = (m.avgPaceSeconds || 0) % 60;
+      setEditPace(`${paceMins}:${paceSecs.toString().padStart(2, '0')}`);
+      setEditCalories(m.calories?.toString() || '');
+      setEditDistance(m.distanceKm?.toFixed(2) || '');
+    }
   };
 
   const handleManualSave = () => {
@@ -190,23 +206,47 @@ export default function Home() {
     }
 
     const durationSeconds = parseInt(durationMatch[1]) * 60 + parseInt(durationMatch[2]);
-    const maxWatts = parseInt(editMaxWatts);
-    const avgWatts = parseInt(editAvgWatts);
-    const maxCadence = editMaxCadence ? parseInt(editMaxCadence) : undefined;
-    const avgCadence = editAvgCadence ? parseInt(editAvgCadence) : undefined;
+    
+    if (editWorkoutType === 'bike') {
+      const maxWatts = parseInt(editMaxWatts);
+      const avgWatts = parseInt(editAvgWatts);
+      const maxCadence = editMaxCadence ? parseInt(editMaxCadence) : undefined;
+      const avgCadence = editAvgCadence ? parseInt(editAvgCadence) : undefined;
 
-    if (isNaN(durationSeconds) || isNaN(maxWatts) || isNaN(avgWatts)) {
-      setError('Please enter valid numbers for duration and watts');
-      return;
+      if (isNaN(durationSeconds) || isNaN(maxWatts) || isNaN(avgWatts)) {
+        setError('Please enter valid numbers for duration and watts');
+        return;
+      }
+
+      setMetrics({
+        type: 'bike',
+        durationSeconds,
+        maxWatts,
+        avgWatts,
+        maxCadence,
+        avgCadence,
+      });
+    } else {
+      // Run workout
+      const paceMatch = editPace.match(/(\d+):(\d+)/);
+      const avgPaceSeconds = paceMatch ? parseInt(paceMatch[1]) * 60 + parseInt(paceMatch[2]) : undefined;
+      const calories = editCalories ? parseInt(editCalories) : undefined;
+      const distanceKm = editDistance ? parseFloat(editDistance) : undefined;
+      
+      if (isNaN(durationSeconds)) {
+        setError('Please enter valid duration');
+        return;
+      }
+
+      setMetrics({
+        type: 'run',
+        durationSeconds,
+        avgPaceSeconds,
+        calories,
+        distanceKm,
+      });
     }
-
-    setMetrics({
-      durationSeconds,
-      maxWatts,
-      avgWatts,
-      maxCadence,
-      avgCadence,
-    });
+    
     setError('');
   };
 
@@ -340,8 +380,19 @@ export default function Home() {
 
     try {
       const tcxContent = generateTCX(metrics);
-      const name = `Gym Bike Workout`;
-      const description = `Duration: ${Math.floor(metrics.durationSeconds / 60)}:${(metrics.durationSeconds % 60).toString().padStart(2, '0')} | Avg: ${metrics.avgWatts}W | Max: ${metrics.maxWatts}W`;
+      
+      let name: string;
+      let description: string;
+      
+      if (metrics.type === 'bike') {
+        name = `Gym Bike Workout`;
+        description = `Duration: ${Math.floor(metrics.durationSeconds / 60)}:${(metrics.durationSeconds % 60).toString().padStart(2, '0')} | Avg: ${metrics.avgWatts}W | Max: ${metrics.maxWatts}W`;
+      } else {
+        name = `Treadmill Workout`;
+        const pace = metrics.avgPaceSeconds ? `${Math.floor(metrics.avgPaceSeconds / 60)}:${(metrics.avgPaceSeconds % 60).toString().padStart(2, '0')}/km` : 'N/A';
+        const distance = metrics.distanceKm ? `${metrics.distanceKm.toFixed(2)}km` : 'N/A';
+        description = `Duration: ${Math.floor(metrics.durationSeconds / 60)}:${(metrics.durationSeconds % 60).toString().padStart(2, '0')} | Pace: ${pace} | Distance: ${distance}`;
+      }
 
       const response = await fetch('/api/strava/upload', {
         method: 'POST',
@@ -417,15 +468,15 @@ export default function Home() {
   return (
     <>
       <Head>
-        <title>Gym Bike to Strava</title>
-        <meta name="description" content="Convert bike workout photos to Strava TCX files" />
+        <title>Gym Bike & Treadmill to Strava</title>
+        <meta name="description" content="Convert bike and treadmill workout photos to Strava TCX files" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png?v=2" />
         <link rel="apple-touch-icon" href="/favicon.png?v=2" />
       </Head>
 
       <main style={styles.main}>
-        <h1 style={styles.title}>Gym Bike to Strava</h1>
+        <h1 style={styles.title}>Gym Bike & Treadmill to Strava</h1>
         <p style={styles.subtitle}>
           Upload a photo of your workout screen and push it straight to your Strava activities, or download a compatible TCX file
         </p>
@@ -561,6 +612,19 @@ export default function Home() {
               
               {manualEdit && (
                 <div style={styles.manualForm}>
+                  {/* Workout Type Selector */}
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>Workout Type</label>
+                    <select
+                      value={editWorkoutType}
+                      onChange={(e) => setEditWorkoutType(e.target.value as 'bike' | 'run')}
+                      style={styles.input}
+                    >
+                      <option value="bike">Bike</option>
+                      <option value="run">Treadmill / Run</option>
+                    </select>
+                  </div>
+                  
                   <div style={styles.formGroup}>
                     <label style={styles.label}>Duration (mm:ss)</label>
                     <input
@@ -572,53 +636,95 @@ export default function Home() {
                     />
                   </div>
                   
-                  <div style={styles.formRow}>
-                    <div style={styles.formGroup}>
-                      <label style={styles.label}>Max Watts</label>
-                      <input
-                        type="number"
-                        value={editMaxWatts}
-                        onChange={(e) => setEditMaxWatts(e.target.value)}
-                        placeholder="474"
-                        style={styles.input}
-                      />
-                    </div>
-                    
-                    <div style={styles.formGroup}>
-                      <label style={styles.label}>Avg Watts</label>
-                      <input
-                        type="number"
-                        value={editAvgWatts}
-                        onChange={(e) => setEditAvgWatts(e.target.value)}
-                        placeholder="210"
-                        style={styles.input}
-                      />
-                    </div>
-                  </div>
-                  
-                  <div style={styles.formRow}>
-                    <div style={styles.formGroup}>
-                      <label style={styles.label}>Max Cadence (optional)</label>
-                      <input
-                        type="number"
-                        value={editMaxCadence}
-                        onChange={(e) => setEditMaxCadence(e.target.value)}
-                        placeholder="104"
-                        style={styles.input}
-                      />
-                    </div>
-                    
-                    <div style={styles.formGroup}>
-                      <label style={styles.label}>Avg Cadence (optional)</label>
-                      <input
-                        type="number"
-                        value={editAvgCadence}
-                        onChange={(e) => setEditAvgCadence(e.target.value)}
-                        placeholder="82"
-                        style={styles.input}
-                      />
-                    </div>
-                  </div>
+                  {editWorkoutType === 'bike' ? (
+                    <>
+                      <div style={styles.formRow}>
+                        <div style={styles.formGroup}>
+                          <label style={styles.label}>Max Watts</label>
+                          <input
+                            type="number"
+                            value={editMaxWatts}
+                            onChange={(e) => setEditMaxWatts(e.target.value)}
+                            placeholder="474"
+                            style={styles.input}
+                          />
+                        </div>
+                        
+                        <div style={styles.formGroup}>
+                          <label style={styles.label}>Avg Watts</label>
+                          <input
+                            type="number"
+                            value={editAvgWatts}
+                            onChange={(e) => setEditAvgWatts(e.target.value)}
+                            placeholder="210"
+                            style={styles.input}
+                          />
+                        </div>
+                      </div>
+                      
+                      <div style={styles.formRow}>
+                        <div style={styles.formGroup}>
+                          <label style={styles.label}>Max Cadence (optional)</label>
+                          <input
+                            type="number"
+                            value={editMaxCadence}
+                            onChange={(e) => setEditMaxCadence(e.target.value)}
+                            placeholder="104"
+                            style={styles.input}
+                          />
+                        </div>
+                        
+                        <div style={styles.formGroup}>
+                          <label style={styles.label}>Avg Cadence (optional)</label>
+                          <input
+                            type="number"
+                            value={editAvgCadence}
+                            onChange={(e) => setEditAvgCadence(e.target.value)}
+                            placeholder="82"
+                            style={styles.input}
+                          />
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={styles.formRow}>
+                        <div style={styles.formGroup}>
+                          <label style={styles.label}>Avg Pace (mm:ss/km)</label>
+                          <input
+                            type="text"
+                            value={editPace}
+                            onChange={(e) => setEditPace(e.target.value)}
+                            placeholder="10:55"
+                            style={styles.input}
+                          />
+                        </div>
+                        
+                        <div style={styles.formGroup}>
+                          <label style={styles.label}>Calories</label>
+                          <input
+                            type="number"
+                            value={editCalories}
+                            onChange={(e) => setEditCalories(e.target.value)}
+                            placeholder="290"
+                            style={styles.input}
+                          />
+                        </div>
+                      </div>
+                      
+                      <div style={styles.formGroup}>
+                        <label style={styles.label}>Distance (km, optional)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={editDistance}
+                          onChange={(e) => setEditDistance(e.target.value)}
+                          placeholder="Auto-calculated from duration/pace"
+                          style={styles.input}
+                        />
+                      </div>
+                    </>
+                  )}
                   
                   <button
                     onClick={handleManualSave}
@@ -636,31 +742,70 @@ export default function Home() {
               <h2 style={styles.resultsTitle}>Extracted Values</h2>
               <div style={styles.metricsList}>
                 <div style={styles.metric}>
+                  <span style={styles.metricLabel}>Type:</span>
+                  <span style={styles.metricValue}>
+                    {metrics.type === 'bike' ? 'Bike' : 'Run'}
+                  </span>
+                </div>
+                <div style={styles.metric}>
                   <span style={styles.metricLabel}>Duration:</span>
                   <span style={styles.metricValue}>
                     {Math.floor(metrics.durationSeconds / 60)}:
                     {(metrics.durationSeconds % 60).toString().padStart(2, '0')}
                   </span>
                 </div>
-                <div style={styles.metric}>
-                  <span style={styles.metricLabel}>Average Watts:</span>
-                  <span style={styles.metricValue}>{metrics.avgWatts}W</span>
-                </div>
-                <div style={styles.metric}>
-                  <span style={styles.metricLabel}>Maximum Watts:</span>
-                  <span style={styles.metricValue}>{metrics.maxWatts}W</span>
-                </div>
-                {metrics.avgCadence && (
-                  <div style={styles.metric}>
-                    <span style={styles.metricLabel}>Average Cadence:</span>
-                    <span style={styles.metricValue}>{metrics.avgCadence} RPM</span>
-                  </div>
-                )}
-                {metrics.maxCadence && (
-                  <div style={styles.metric}>
-                    <span style={styles.metricLabel}>Maximum Cadence:</span>
-                    <span style={styles.metricValue}>{metrics.maxCadence} RPM</span>
-                  </div>
+                
+                {metrics.type === 'bike' ? (
+                  <>
+                    {metrics.avgWatts !== undefined && (
+                      <div style={styles.metric}>
+                        <span style={styles.metricLabel}>Average Watts:</span>
+                        <span style={styles.metricValue}>{metrics.avgWatts}W</span>
+                      </div>
+                    )}
+                    {metrics.maxWatts !== undefined && (
+                      <div style={styles.metric}>
+                        <span style={styles.metricLabel}>Maximum Watts:</span>
+                        <span style={styles.metricValue}>{metrics.maxWatts}W</span>
+                      </div>
+                    )}
+                    {metrics.avgCadence && (
+                      <div style={styles.metric}>
+                        <span style={styles.metricLabel}>Average Cadence:</span>
+                        <span style={styles.metricValue}>{metrics.avgCadence} RPM</span>
+                      </div>
+                    )}
+                    {metrics.maxCadence && (
+                      <div style={styles.metric}>
+                        <span style={styles.metricLabel}>Maximum Cadence:</span>
+                        <span style={styles.metricValue}>{metrics.maxCadence} RPM</span>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {metrics.avgPaceSeconds !== undefined && (
+                      <div style={styles.metric}>
+                        <span style={styles.metricLabel}>Average Pace:</span>
+                        <span style={styles.metricValue}>
+                          {Math.floor(metrics.avgPaceSeconds / 60)}:
+                          {(metrics.avgPaceSeconds % 60).toString().padStart(2, '0')} /km
+                        </span>
+                      </div>
+                    )}
+                    {metrics.distanceKm !== undefined && (
+                      <div style={styles.metric}>
+                        <span style={styles.metricLabel}>Distance:</span>
+                        <span style={styles.metricValue}>{metrics.distanceKm.toFixed(2)} km</span>
+                      </div>
+                    )}
+                    {metrics.calories !== undefined && (
+                      <div style={styles.metric}>
+                        <span style={styles.metricLabel}>Calories:</span>
+                        <span style={styles.metricValue}>{metrics.calories} kcal</span>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
 

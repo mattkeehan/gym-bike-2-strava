@@ -1,6 +1,85 @@
 import { WorkoutMetrics } from '../types';
 
 export function generateTCX(metrics: WorkoutMetrics): string {
+  if (metrics.type === 'run') {
+    return generateRunTCX(metrics);
+  } else {
+    return generateBikeTCX(metrics);
+  }
+}
+
+function generateRunTCX(metrics: WorkoutMetrics): string {
+  const now = new Date();
+  const startTime = new Date(now.getTime() - metrics.durationSeconds * 1000);
+  
+  // Calculate distance if we have pace: distance = duration / pace
+  const distanceMeters = metrics.distanceKm ? metrics.distanceKm * 1000 : 0;
+  
+  // Use provided calories or estimate (rough: 60 kcal per km for running)
+  const calories = metrics.calories || Math.round((metrics.distanceKm || 0) * 60);
+  
+  // Generate trackpoints every 30 seconds
+  const trackpointInterval = 30; // seconds
+  const numTrackpoints = Math.floor(metrics.durationSeconds / trackpointInterval);
+  
+  let trackpoints = '';
+  let accumulatedDistance = 0;
+  
+  for (let i = 0; i <= numTrackpoints; i++) {
+    const timeOffset = i * trackpointInterval;
+    const pointTime = new Date(startTime.getTime() + timeOffset * 1000).toISOString();
+    
+    // Calculate distance for this trackpoint
+    if (distanceMeters > 0) {
+      accumulatedDistance = (timeOffset / metrics.durationSeconds) * distanceMeters;
+    }
+    
+    // Calculate speed in m/s
+    const speedMps = metrics.avgPaceSeconds && metrics.avgPaceSeconds > 0 
+      ? 1000 / metrics.avgPaceSeconds  // Convert pace (s/km) to speed (m/s)
+      : 0;
+    
+    trackpoints += `
+          <Trackpoint>
+            <Time>${pointTime}</Time>
+            <DistanceMeters>${accumulatedDistance.toFixed(2)}</DistanceMeters>
+            ${metrics.avgCadence ? `<Cadence>${metrics.avgCadence}</Cadence>` : ''}
+            <Extensions>
+              <ns3:TPX>
+                ${speedMps > 0 ? `<ns3:Speed>${speedMps.toFixed(2)}</ns3:Speed>` : ''}
+              </ns3:TPX>
+            </Extensions>
+          </Trackpoint>`;
+  }
+  
+  const tcx = `<?xml version="1.0" encoding="UTF-8"?>
+<TrainingCenterDatabase
+  xsi:schemaLocation="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2 http://www.garmin.com/xmlschemas/TrainingCenterDatabasev2.xsd"
+  xmlns:ns5="http://www.garmin.com/xmlschemas/ActivityGoals/v1"
+  xmlns:ns3="http://www.garmin.com/xmlschemas/ActivityExtension/v2"
+  xmlns:ns2="http://www.garmin.com/xmlschemas/UserProfile/v2"
+  xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Activities>
+    <Activity Sport="Running">
+      <Id>${startTime.toISOString()}</Id>
+      <Lap StartTime="${startTime.toISOString()}">
+        <TotalTimeSeconds>${metrics.durationSeconds}</TotalTimeSeconds>
+        <DistanceMeters>${distanceMeters.toFixed(2)}</DistanceMeters>
+        <Calories>${calories}</Calories>
+        <Intensity>Active</Intensity>
+        <TriggerMethod>Manual</TriggerMethod>
+        <Track>${trackpoints}
+        </Track>
+      </Lap>
+    </Activity>
+  </Activities>
+</TrainingCenterDatabase>`;
+
+  return tcx;
+}
+
+function generateBikeTCX(metrics: WorkoutMetrics): string {
   const now = new Date();
   const startTime = new Date(now.getTime() - metrics.durationSeconds * 1000);
   
@@ -14,7 +93,7 @@ export function generateTCX(metrics: WorkoutMetrics): string {
       
       // Estimate cadence based on power (rough correlation)
       let cadence: number | undefined;
-      if (metrics.avgCadence && metrics.maxCadence) {
+      if (metrics.avgCadence && metrics.maxCadence && metrics.maxWatts) {
         const powerRatio = sample.watts / metrics.maxWatts;
         cadence = Math.round(
           metrics.avgCadence + (metrics.maxCadence - metrics.avgCadence) * powerRatio * 0.7
@@ -49,21 +128,21 @@ export function generateTCX(metrics: WorkoutMetrics): string {
       let cadence: number | undefined;
       
       if (progressRatio < 0.1) {
-        watts = Math.round(metrics.avgWatts * 0.7);
+        watts = Math.round((metrics.avgWatts || 0) * 0.7);
         cadence = metrics.avgCadence ? Math.round(metrics.avgCadence * 0.8) : undefined;
       } else if (progressRatio >= 0.2 && progressRatio <= 0.3) {
-        watts = Math.round(metrics.avgWatts + (metrics.maxWatts - metrics.avgWatts) * (Math.random() * 0.5 + 0.5));
+        watts = Math.round((metrics.avgWatts || 0) + ((metrics.maxWatts || 0) - (metrics.avgWatts || 0)) * (Math.random() * 0.5 + 0.5));
         cadence = metrics.maxCadence ? Math.round(metrics.maxCadence * (Math.random() * 0.2 + 0.8)) : metrics.avgCadence;
       } else if (progressRatio > 0.9) {
-        watts = Math.round(metrics.avgWatts * 0.8);
+        watts = Math.round((metrics.avgWatts || 0) * 0.8);
         cadence = metrics.avgCadence ? Math.round(metrics.avgCadence * 0.85) : undefined;
       } else {
-        watts = Math.round(metrics.avgWatts + (Math.random() - 0.5) * metrics.avgWatts * 0.3);
+        watts = Math.round((metrics.avgWatts || 0) + (Math.random() - 0.5) * (metrics.avgWatts || 0) * 0.3);
         cadence = metrics.avgCadence ? Math.round(metrics.avgCadence + (Math.random() - 0.5) * 15) : undefined;
       }
       
       if (i === Math.floor(numTrackpoints * 0.25)) {
-        watts = metrics.maxWatts;
+        watts = metrics.maxWatts || 0;
         cadence = metrics.maxCadence;
       }
       
@@ -81,7 +160,7 @@ export function generateTCX(metrics: WorkoutMetrics): string {
   }
   
   // Calculate estimated calories (rough approximation: 1 kJ ≈ 0.239 kcal)
-  const estimatedCalories = Math.round(metrics.avgWatts * metrics.durationSeconds * 0.239 / 1000);
+  const estimatedCalories = Math.round((metrics.avgWatts || 0) * metrics.durationSeconds * 0.239 / 1000);
 
   const tcx = `<?xml version="1.0" encoding="UTF-8"?>
 <TrainingCenterDatabase
