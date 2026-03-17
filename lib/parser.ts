@@ -45,7 +45,8 @@ function parseRunWorkout(text: string): WorkoutMetrics | null {
   const allTimePatterns = Array.from(text.matchAll(/(\d{1,3}):(\d{2})/g));
   
   if (allTimePatterns.length === 0) {
-    throw new Error('Duration not found in text');
+    // No time patterns found - can't parse
+    return null;
   }
   
   // The longest time value is likely the duration (45:09 is longer than 10:55)
@@ -126,7 +127,7 @@ function parseBikeWorkout(text: string): WorkoutMetrics | null {
   // Matches patterns like "41:37 mins on the bike", "41:37 mins on the bi", "41:37 mins on the hike"
   const durationMatch = text.match(/(\d{1,3}):(\d{2})\s*mins?\s*on\s*(?:the\s*)?(?:bike?|hike?|bi)/i);
   if (!durationMatch) {
-    throw new Error('Duration not found in text');
+    return null;
   }
   const minutes = parseInt(durationMatch[1], 10);
   const seconds = parseInt(durationMatch[2], 10);
@@ -211,7 +212,7 @@ function parseBikeWorkout(text: string): WorkoutMetrics | null {
   }
 
   if (!maxWatts || !avgWatts) {
-    throw new Error('Could not find watts values in text');
+    return null;
   }
 
   // Ensure max > avg for both watts and cadence
