@@ -385,10 +385,10 @@ export default function Home() {
       let description: string;
       
       if (metrics.type === 'bike') {
-        name = `Gym Bike Workout`;
+        name = `Gym Bike Workout · via gym-bike-2-strava`;
         description = `Duration: ${Math.floor(metrics.durationSeconds / 60)}:${(metrics.durationSeconds % 60).toString().padStart(2, '0')} | Avg: ${metrics.avgWatts}W | Max: ${metrics.maxWatts}W`;
       } else {
-        name = `Treadmill Workout`;
+        name = `Treadmill Workout · via gym-bike-2-strava`;
         const pace = metrics.avgPaceSeconds ? `${Math.floor(metrics.avgPaceSeconds / 60)}:${(metrics.avgPaceSeconds % 60).toString().padStart(2, '0')}/km` : 'N/A';
         const distance = metrics.distanceKm ? `${metrics.distanceKm.toFixed(2)}km` : 'N/A';
         description = `Duration: ${Math.floor(metrics.durationSeconds / 60)}:${(metrics.durationSeconds % 60).toString().padStart(2, '0')} | Pace: ${pace} | Distance: ${distance}`;
