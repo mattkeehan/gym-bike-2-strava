@@ -470,7 +470,7 @@ export default function Home() {
     <>
       <Analytics/>
       <Head>
-        <title>Gym Bike & Treadmill to Strava</title>
+        <title>Gym Bike & Treadmill summary photo to Strava</title>
         <meta name="description" content="Convert bike and treadmill workout photos to Strava TCX files" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png?v=2" />
@@ -478,7 +478,7 @@ export default function Home() {
       </Head>
 
       <main style={styles.main}>
-        <h1 style={styles.title}>Gym Bike & Treadmill to Strava</h1>
+        <h1 style={styles.title}>Gym Bike & Treadmill summary photo to Strava</h1>
         <p style={styles.subtitle}>
           Upload a photo of your workout screen and push it straight to your Strava activities, or download a compatible TCX file
         </p>
