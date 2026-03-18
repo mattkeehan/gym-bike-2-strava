@@ -28,14 +28,14 @@ Go to **Settings** → **Environment Variables** and add:
 ```
 STRAVA_CLIENT_ID=your_client_id
 STRAVA_CLIENT_SECRET=your_client_secret
-STRAVA_REDIRECT_URI=https://gym-bike-2-strava.vercel.app/api/strava/callback
+STRAVA_REDIRECT_URI=https://photo2strava.com
 ```
 
 ### 3. Update Strava API Settings
 
 Go to https://www.strava.com/settings/api and update:
 
-- **Authorization Callback Domain**: `localhost,gym-bike-2-strava.vercel.app`
+- **Authorization Callback Domain**: `localhost,photo2strava.com`
 
 ### 4. Deploy
 
