@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import Head from 'next/head';
+import { Analytics } from "@vercel/analytics/next"
 import { extractTextFromImage } from '../lib/ocr';
 import { parseWorkoutMetrics } from '../lib/parser';
 import { generateTCX } from '../lib/tcx';
@@ -467,6 +468,7 @@ export default function Home() {
 
   return (
     <>
+      <Analytics/>
       <Head>
         <title>Gym Bike & Treadmill to Strava</title>
         <meta name="description" content="Convert bike and treadmill workout photos to Strava TCX files" />
