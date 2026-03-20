@@ -129,6 +129,48 @@ export default function Home() {
     }
   }, []);
 
+  // Helper to resize image before sending to API (reduces payload size)
+  const resizeImageForAPI = async (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          // Calculate new dimensions (max width 1600px, maintain aspect ratio)
+          const maxWidth = 1600;
+          let width = img.width;
+          let height = img.height;
+          
+          if (width > maxWidth) {
+            height = (height * maxWidth) / width;
+            width = maxWidth;
+          }
+          
+          // Create canvas and draw resized image
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          
+          if (!ctx) {
+            reject(new Error('Failed to get canvas context'));
+            return;
+          }
+          
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          // Convert to JPEG base64 (quality 0.85 for good balance)
+          const resizedBase64 = canvas.toDataURL('image/jpeg', 0.85);
+          resolve(resizedBase64);
+        };
+        img.onerror = () => reject(new Error('Failed to load image'));
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
@@ -218,21 +260,16 @@ export default function Home() {
     setError('');
 
     try {
-      // Convert file to base64
-      const reader = new FileReader();
-      const fileData = await new Promise<string>((resolve, reject) => {
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
+      // Resize image to reduce payload size
+      const resizedImageData = await resizeImageForAPI(file);
 
       // Call AI extraction API
       const response = await fetch('/api/extract-ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          imageBase64: fileData,
-          mimeType: file.type,
+          imageBase64: resizedImageData,
+          mimeType: 'image/jpeg',
         }),
       });
 
