@@ -67,10 +67,9 @@ export default function Home() {
   const [extractedText, setExtractedText] = useState<string>('');
   const [metrics, setMetrics] = useState<WorkoutMetrics | null>(null);
   const [loading, setLoading] = useState(false);
-  const [loadingAI, setLoadingAI] = useState(false);
   const [error, setError] = useState<string>('');
   const [manualEdit, setManualEdit] = useState(false);
-  const [showAISuggestion, setShowAISuggestion] = useState(false);
+  const [showOCRFallback, setShowOCRFallback] = useState(false);
   
   // Graph extraction state
   const [cropMode, setCropMode] = useState(false);
@@ -181,7 +180,7 @@ export default function Home() {
       setManualEdit(false);
       setCropBox(null);
       setCropMode(false);
-      setShowAISuggestion(false);
+      setShowOCRFallback(false);
       
       // Create preview URL
       const url = URL.createObjectURL(selectedFile);
@@ -197,73 +196,13 @@ export default function Home() {
 
     setLoading(true);
     setError('');
-    setShowAISuggestion(false);
-
-    try {
-      // Extract text using OCR
-      const text = await extractTextFromImage(file);
-      setExtractedText(text);
-
-      // Parse the extracted text
-      const parsedMetrics = parseWorkoutMetrics(text);
-      
-      if (!parsedMetrics) {
-        setError('Could not parse workout metrics. Please use manual entry below.');
-        setManualEdit(true);
-        setShowAISuggestion(true); // OCR completely failed
-        return;
-      }
-
-      setMetrics(parsedMetrics);
-      populateEditFields(parsedMetrics);
-
-      // Check if metrics are incomplete and suggest AI extraction
-      const incomplete = isMetricsIncomplete(parsedMetrics);
-      if (incomplete) {
-        setShowAISuggestion(true);
-      }
-    } catch (err) {
-      setError('Failed to extract workout data. Please try manual entry.');
-      setManualEdit(true);
-      setShowAISuggestion(true); // OCR failed
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Helper to check if key metrics are missing
-  const isMetricsIncomplete = (m: WorkoutMetrics): boolean => {
-    // Missing duration is always incomplete
-    if (!m.durationSeconds) return true;
-    
-    // For bike workouts, check watts
-    if (m.type === 'bike') {
-      if (!m.avgWatts || !m.maxWatts) return true;
-    }
-    
-    // For run workouts, check pace or distance
-    if (m.type === 'run') {
-      if (!m.avgPaceSeconds && !m.distanceKm) return true;
-    }
-    
-    return false;
-  };
-
-  const handleExtractWithAI = async () => {
-    if (!file) {
-      setError('Please select an image first');
-      return;
-    }
-
-    setLoadingAI(true);
-    setError('');
+    setShowOCRFallback(false);
 
     try {
       // Resize image to reduce payload size
       const resizedImageData = await resizeImageForAPI(file);
 
-      // Call AI extraction API
+      // Call AI extraction API (now the default)
       const response = await fetch('/api/extract-ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -297,19 +236,55 @@ export default function Home() {
 
       // Validate we have minimum required fields
       if (!parsedMetrics.durationSeconds) {
-        throw new Error('AI could not extract duration. Please use manual entry.');
+        throw new Error('Could not extract duration from image');
       }
 
       setMetrics(parsedMetrics);
       populateEditFields(parsedMetrics);
-      setExtractedText(`AI Extraction (confidence: ${aiResult.confidence ? (aiResult.confidence * 100).toFixed(0) : 'N/A'}%)\n${aiResult.notes || ''}`);
-      setShowAISuggestion(false); // Dismiss suggestion on success
+      setExtractedText(`AI Extraction (confidence: ${aiResult.confidence ? (aiResult.confidence * 100).toFixed(0) : 'N/A'}%)
+${aiResult.notes || ''}`);
     } catch (err: any) {
-      setError(err.message || 'AI extraction failed. Try OCR or manual entry.');
+      setError('AI extraction didn\'t work for this image.');
+      setShowOCRFallback(true);
       setManualEdit(true);
       console.error('AI extraction error:', err);
     } finally {
-      setLoadingAI(false);
+      setLoading(false);
+    }
+  };
+
+  const handleBasicExtract = async () => {
+    if (!file) {
+      setError('Please select an image first');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    setShowOCRFallback(false);
+
+    try {
+      // Extract text using OCR (basic fallback method)
+      const text = await extractTextFromImage(file);
+      setExtractedText(text);
+
+      // Parse the extracted text
+      const parsedMetrics = parseWorkoutMetrics(text);
+      
+      if (!parsedMetrics) {
+        setError('Could not parse workout metrics. Please use manual entry below.');
+        setManualEdit(true);
+        return;
+      }
+
+      setMetrics(parsedMetrics);
+      populateEditFields(parsedMetrics);
+    } catch (err) {
+      setError('Failed to extract workout data. Please use manual entry.');
+      setManualEdit(true);
+      console.error(err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -664,21 +639,21 @@ export default function Home() {
           >
             {loading ? 'Extracting...' : 'Extract Workout'}
           </button>
+          
+          <div style={styles.helperText}>
+            Uses AI for better results on most machines
+          </div>
 
-          <div style={styles.aiButtonWrapper}>
-            <button
-              onClick={handleExtractWithAI}
-              disabled={!file || loadingAI}
+          <div style={styles.fallbackLink}>
+            <a
+              onClick={handleBasicExtract}
               style={{
-                ...styles.aiButton,
-                ...((!file || loadingAI) && styles.buttonDisabled),
+                ...styles.link,
+                ...((loading || !file) && styles.linkDisabled),
               }}
             >
-              {loadingAI ? 'Extracting with AI...' : 'Extract with AI (beta)'}
-            </button>
-            <span style={styles.aiButtonHint}>
-              Better for messy photos and unusual screens
-            </span>
+              Having trouble? Use basic extraction
+            </a>
           </div>
 
           {error && (
@@ -687,12 +662,12 @@ export default function Home() {
             </div>
           )}
 
-          {showAISuggestion && !loadingAI && (
-            <div style={styles.aiSuggestion}>
-              <div style={styles.aiSuggestionContent}>
-                <span>💡 Having trouble with this photo? Try AI extraction (beta).</span>
+          {showOCRFallback && (
+            <div style={styles.fallbackSuggestion}>
+              <div style={styles.fallbackSuggestionContent}>
+                <span>Try <a onClick={handleBasicExtract} style={styles.inlineLink}>basic extraction</a> instead, or use manual entry below.</span>
                 <button 
-                  onClick={() => setShowAISuggestion(false)}
+                  onClick={() => setShowOCRFallback(false)}
                   style={styles.dismissButton}
                   aria-label="Dismiss"
                 >
@@ -1330,50 +1305,53 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: 'bold',
     textDecoration: 'underline',
   },
-  aiButtonWrapper: {
-    marginTop: '1rem',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '0.5rem',
-  },
-  aiButton: {
-    width: '100%',
-    padding: '1rem',
-    fontSize: '1rem',
-    fontWeight: 'bold',
-    color: 'white',
-    backgroundColor: '#9C27B0',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    transition: 'background-color 0.2s',
-  },
-  aiButtonHint: {
+  helperText: {
+    marginTop: '0.5rem',
     fontSize: '0.75rem',
     color: '#888',
-    fontStyle: 'italic',
     textAlign: 'center',
   },
-  aiSuggestion: {
+  fallbackLink: {
+    marginTop: '1rem',
+    textAlign: 'center',
+  },
+  link: {
+    fontSize: '0.875rem',
+    color: '#2196F3',
+    textDecoration: 'underline',
+    cursor: 'pointer',
+    transition: 'color 0.2s',
+  },
+  linkDisabled: {
+    color: '#ccc',
+    cursor: 'not-allowed',
+    textDecoration: 'none',
+  },
+  fallbackSuggestion: {
     marginTop: '1rem',
     padding: '1rem',
-    backgroundColor: '#f3e5f5',
-    border: '1px solid #9C27B0',
+    backgroundColor: '#fff3e0',
+    border: '1px solid #ff9800',
     borderRadius: '4px',
   },
-  aiSuggestionContent: {
+  fallbackSuggestionContent: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     gap: '1rem',
-    color: '#6a1b9a',
+    color: '#e65100',
     fontSize: '0.875rem',
+  },
+  inlineLink: {
+    color: '#2196F3',
+    textDecoration: 'underline',
+    cursor: 'pointer',
+    fontWeight: '500',
   },
   dismissButton: {
     background: 'none',
     border: 'none',
-    color: '#6a1b9a',
+    color: '#e65100',
     fontSize: '1.25rem',
     cursor: 'pointer',
     padding: '0',
