@@ -47,12 +47,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(500).json({ error: 'AI service not configured' });
     }
 
-    // Initialize OpenAI client
-    // Note: To use a gateway, set AI_GATEWAY_BASE_URL environment variable
-    // Example for Cloudflare: https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway_id}/openai
+    // Initialize OpenAI provider with Vercel AI Gateway
+    // For Vercel AI Gateway, set baseURL to the gateway endpoint
+    // Example: https://gateway.vercel.com/v1
+    const baseURL = process.env.AI_GATEWAY_BASE_URL || 'https://gateway.vercel.com/v1';
+    
     const openai = createOpenAI({
       apiKey,
-      baseURL: process.env.AI_GATEWAY_BASE_URL,
+      baseURL,
     });
 
     // Prepare the image data
