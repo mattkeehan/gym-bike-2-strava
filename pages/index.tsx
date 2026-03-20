@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
 import { Analytics } from "@vercel/analytics/next"
 import { extractTextFromImage } from '../lib/ocr';
@@ -16,6 +16,9 @@ export default function Home() {
   const [manualEdit, setManualEdit] = useState(false);
   const [showOCRFallback, setShowOCRFallback] = useState(false);
   const [usedBasicExtraction, setUsedBasicExtraction] = useState(false);
+  
+  // Ref for scrolling to results after successful extraction
+  const resultsRef = useRef<HTMLDivElement>(null);
   
   // Editable fields
   const [editDuration, setEditDuration] = useState('');
@@ -212,6 +215,11 @@ ${aiResult.notes || ''}`);
       
       // Mark AI as used for today
       markAIUsed();
+      
+      // Scroll to results after successful extraction
+      setTimeout(() => {
+        resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
     } catch (err: any) {
       setError('AI extraction didn\'t work for this image.');
       setShowOCRFallback(true);
@@ -341,6 +349,20 @@ ${aiResult.notes || ''}`);
     }
     
     setError('');
+  };
+
+  const handleUploadAnother = () => {
+    // Reset to allow uploading another photo
+    setFile(null);
+    setImagePreviewUrl('');
+    setMetrics(null);
+    setExtractedText('');
+    setError('');
+    setManualEdit(false);
+    setShowOCRFallback(false);
+    setUsedBasicExtraction(false);
+    setUploadStatus('');
+    setStravaActivityId(null);
   };
 
 
@@ -490,41 +512,191 @@ ${aiResult.notes || ''}`);
         </div>
 
         <div style={styles.container}>
-          <div style={styles.uploadSection}>
-            <label htmlFor="file-upload" style={styles.uploadLabel}>
-              {file ? file.name : 'Choose Image'}
-            </label>
-            <input
-              id="file-upload"
-              type="file"
-              accept="image/*"
-              onChange={handleFileChange}
-              style={styles.fileInput}
-            />
-          </div>
+          {/* Success Card - shown prominently after extraction */}
+          {metrics && (
+            <div ref={resultsRef} style={styles.successCard}>
+              <h2 style={styles.successTitle}>✓ Workout extracted</h2>
+              
+              <div style={styles.compactSummary}>
+                <div style={styles.summaryRow}>
+                  <span style={styles.summaryLabel}>Type:</span>
+                  <span style={styles.summaryValue}>
+                    {metrics.type === 'bike' ? 'Bike' : 'Run'}
+                  </span>
+                </div>
+                <div style={styles.summaryRow}>
+                  <span style={styles.summaryLabel}>Duration:</span>
+                  <span style={styles.summaryValue}>
+                    {Math.floor(metrics.durationSeconds / 60)}:
+                    {(metrics.durationSeconds % 60).toString().padStart(2, '0')}
+                  </span>
+                </div>
+                
+                {metrics.type === 'bike' ? (
+                  <>
+                    {metrics.avgWatts !== undefined && (
+                      <div style={styles.summaryRow}>
+                        <span style={styles.summaryLabel}>Avg Watts:</span>
+                        <span style={styles.summaryValue}>{metrics.avgWatts}W</span>
+                      </div>
+                    )}
+                    {metrics.maxWatts !== undefined && (
+                      <div style={styles.summaryRow}>
+                        <span style={styles.summaryLabel}>Max Watts:</span>
+                        <span style={styles.summaryValue}>{metrics.maxWatts}W</span>
+                      </div>
+                    )}
+                    {metrics.avgCadence && (
+                      <div style={styles.summaryRow}>
+                        <span style={styles.summaryLabel}>Avg Cadence:</span>
+                        <span style={styles.summaryValue}>{metrics.avgCadence} RPM</span>
+                      </div>
+                    )}
+                    {metrics.maxCadence && (
+                      <div style={styles.summaryRow}>
+                        <span style={styles.summaryLabel}>Max Cadence:</span>
+                        <span style={styles.summaryValue}>{metrics.maxCadence} RPM</span>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {metrics.avgPaceSeconds !== undefined && (
+                      <div style={styles.summaryRow}>
+                        <span style={styles.summaryLabel}>Avg Pace:</span>
+                        <span style={styles.summaryValue}>
+                          {Math.floor(metrics.avgPaceSeconds / 60)}:
+                          {(metrics.avgPaceSeconds % 60).toString().padStart(2, '0')} /km
+                        </span>
+                      </div>
+                    )}
+                    {metrics.distanceKm !== undefined && (
+                      <div style={styles.summaryRow}>
+                        <span style={styles.summaryLabel}>Distance:</span>
+                        <span style={styles.summaryValue}>{metrics.distanceKm.toFixed(2)} km</span>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
 
-          <button
-            onClick={handleExtract}
-            disabled={!file || loading || hasUsedAI()}
-            style={{
-              ...styles.button,
-              ...((!file || loading || hasUsedAI()) && styles.buttonDisabled),
-            }}
-          >
-            {loading ? 'Extracting...' : hasUsedAI() ? 'AI used today — try again tomorrow' : 'Extract Workout'}
-          </button>
-          
-          <div style={styles.helperText}>
-            {hasUsedAI() ? 'Free daily AI extraction limit reached' : 'Uses AI for better results on most machines'}
-          </div>
+              {/* Primary CTAs */}
+              <div style={styles.successActions}>
+                {stravaConnected ? (
+                  <button
+                    onClick={handleUploadToStrava}
+                    disabled={uploadingToStrava}
+                    style={{
+                      ...styles.primaryButton,
+                      ...(uploadingToStrava && styles.buttonDisabled),
+                    }}
+                  >
+                    {uploadingToStrava ? 'Uploading...' : 'Send to Strava'}
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleConnectStrava}
+                    style={styles.primaryButton}
+                  >
+                    Connect to Strava
+                  </button>
+                )}
+                
+                <button
+                  onClick={handleDownloadTCX}
+                  style={styles.secondaryButton}
+                >
+                  Download TCX
+                </button>
+              </div>
 
-          {hasUsedAI() && file && (
-            <div style={styles.basicExtractionLink}>
-              <a onClick={handleBasicExtract} style={styles.link}>
-                Use basic extraction instead
-              </a>
+              <div style={styles.secondaryActions}>
+                <a onClick={handleUploadAnother} style={styles.secondaryLink}>
+                  Upload another photo
+                </a>
+              </div>
+
+              {uploadStatus && (
+                <div style={styles.uploadStatus}>
+                  {uploadStatus}
+                  {stravaActivityId && (
+                    <>
+                      {' '}
+                      <a 
+                        href={`https://www.strava.com/activities/${stravaActivityId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={styles.stravaLink}
+                      >
+                        View on Strava
+                      </a>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Muted AI usage note */}
+              {hasUsedAI() && (
+                <div style={styles.usagNote}>
+                  Free AI extraction used for today. You can still upload this workout to Strava.
+                </div>
+              )}
             </div>
           )}
+
+          {/* Upload section - de-emphasized after success */}
+          <div style={{
+            ...styles.uploadArea,
+            ...(metrics && styles.uploadAreaSubordinate),
+          }}>
+            <div style={styles.uploadSection}>
+              <label htmlFor="file-upload" style={styles.uploadLabel}>
+                {file ? file.name : 'Choose Image'}
+              </label>
+              <input
+                id="file-upload"
+                type="file"
+                accept="image/*"
+                onChange={handleFileChange}
+                style={styles.fileInput}
+              />
+            </div>
+
+            {!metrics && (
+              <>
+                <button
+                  onClick={handleExtract}
+                  disabled={!file || loading || hasUsedAI()}
+                  style={{
+                    ...styles.button,
+                    ...((!file || loading || hasUsedAI()) && styles.buttonDisabled),
+                  }}
+                >
+                  {loading ? 'Extracting...' : hasUsedAI() ? 'AI used today — try again tomorrow' : 'Extract Workout'}
+                </button>
+                
+                <div style={styles.helperText}>
+                  {hasUsedAI() ? 'Free daily AI extraction limit reached' : 'Uses AI for better results on most machines'}
+                </div>
+
+                {hasUsedAI() && file && (
+                  <div style={styles.basicExtractionLink}>
+                    <a onClick={handleBasicExtract} style={styles.link}>
+                      Use basic extraction instead
+                    </a>
+                  </div>
+                )}
+              </>
+            )}
+
+            {metrics && (
+              <div style={styles.mutedHelperText}>
+                {hasUsedAI() 
+                  ? 'Upload another photo tomorrow for free AI extraction' 
+                  : 'Upload complete'}
+              </div>
+            )}
+          </div>
 
           {usedBasicExtraction && (
             <div style={styles.basicExtractionMessage}>
@@ -712,121 +884,6 @@ ${aiResult.notes || ''}`);
                   >
                     Save & Generate TCX
                   </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {metrics && (
-            <div style={styles.results}>
-              <h2 style={styles.resultsTitle}>Extracted Values</h2>
-              <div style={styles.metricsList}>
-                <div style={styles.metric}>
-                  <span style={styles.metricLabel}>Type:</span>
-                  <span style={styles.metricValue}>
-                    {metrics.type === 'bike' ? 'Bike' : 'Run'}
-                  </span>
-                </div>
-                <div style={styles.metric}>
-                  <span style={styles.metricLabel}>Duration:</span>
-                  <span style={styles.metricValue}>
-                    {Math.floor(metrics.durationSeconds / 60)}:
-                    {(metrics.durationSeconds % 60).toString().padStart(2, '0')}
-                  </span>
-                </div>
-                
-                {metrics.type === 'bike' ? (
-                  <>
-                    {metrics.avgWatts !== undefined && (
-                      <div style={styles.metric}>
-                        <span style={styles.metricLabel}>Average Watts:</span>
-                        <span style={styles.metricValue}>{metrics.avgWatts}W</span>
-                      </div>
-                    )}
-                    {metrics.maxWatts !== undefined && (
-                      <div style={styles.metric}>
-                        <span style={styles.metricLabel}>Maximum Watts:</span>
-                        <span style={styles.metricValue}>{metrics.maxWatts}W</span>
-                      </div>
-                    )}
-                    {metrics.avgCadence && (
-                      <div style={styles.metric}>
-                        <span style={styles.metricLabel}>Average Cadence:</span>
-                        <span style={styles.metricValue}>{metrics.avgCadence} RPM</span>
-                      </div>
-                    )}
-                    {metrics.maxCadence && (
-                      <div style={styles.metric}>
-                        <span style={styles.metricLabel}>Maximum Cadence:</span>
-                        <span style={styles.metricValue}>{metrics.maxCadence} RPM</span>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    {metrics.avgPaceSeconds !== undefined && (
-                      <div style={styles.metric}>
-                        <span style={styles.metricLabel}>Average Pace:</span>
-                        <span style={styles.metricValue}>
-                          {Math.floor(metrics.avgPaceSeconds / 60)}:
-                          {(metrics.avgPaceSeconds % 60).toString().padStart(2, '0')} /km
-                        </span>
-                      </div>
-                    )}
-                    {metrics.distanceKm !== undefined && (
-                      <div style={styles.metric}>
-                        <span style={styles.metricLabel}>Distance:</span>
-                        <span style={styles.metricValue}>{metrics.distanceKm.toFixed(2)} km</span>
-                      </div>
-                    )}
-                    {metrics.calories !== undefined && (
-                      <div style={styles.metric}>
-                        <span style={styles.metricLabel}>Calories:</span>
-                        <span style={styles.metricValue}>{metrics.calories} kcal</span>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-
-              <div style={styles.actionButtons}>
-                <button
-                  onClick={handleDownloadTCX}
-                  style={styles.downloadButton}
-                >
-                  Download TCX
-                </button>
-                
-                {stravaConnected && (
-                  <button
-                    onClick={handleUploadToStrava}
-                    disabled={uploadingToStrava}
-                    style={{
-                      ...styles.stravaButton,
-                      ...(uploadingToStrava && styles.buttonDisabled),
-                    }}
-                  >
-                    {uploadingToStrava ? 'Uploading...' : 'Send to Strava'}
-                  </button>
-                )}
-              </div>
-              
-              {uploadStatus && (
-                <div style={styles.uploadStatus}>
-                  {uploadStatus}
-                  {stravaActivityId && (
-                    <>
-                      {' '}
-                      <a 
-                        href={`https://www.strava.com/activities/${stravaActivityId}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={styles.stravaLink}
-                      >
-                        View on Strava
-                      </a>
-                    </>
-                  )}
                 </div>
               )}
             </div>
@@ -1198,5 +1255,106 @@ const styles: { [key: string]: React.CSSProperties } = {
     textDecoration: 'none',
     fontWeight: '500',
     transition: 'color 0.2s',
+  },
+  successCard: {
+    marginBottom: '2rem',
+    padding: '2rem',
+    backgroundColor: '#f0f7ff',
+    border: '2px solid #90caf9',
+    borderRadius: '8px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+  },
+  successTitle: {
+    fontSize: '1.5rem',
+    fontWeight: 'bold',
+    color: '#1565c0',
+    margin: '0 0 1.5rem 0',
+  },
+  compactSummary: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '0.75rem',
+    marginBottom: '1.5rem',
+  },
+  summaryRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    padding: '0.5rem',
+    backgroundColor: 'white',
+    borderRadius: '4px',
+  },
+  summaryLabel: {
+    fontSize: '0.875rem',
+    color: '#666',
+    fontWeight: '500',
+  },
+  summaryValue: {
+    fontSize: '0.875rem',
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  successActions: {
+    display: 'flex',
+    gap: '1rem',
+    marginBottom: '1rem',
+  },
+  primaryButton: {
+    flex: 1,
+    padding: '1rem',
+    fontSize: '1rem',
+    fontWeight: 'bold',
+    color: 'white',
+    backgroundColor: '#FC4C02',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    transition: 'background-color 0.2s',
+  },
+  secondaryButton: {
+    flex: 1,
+    padding: '1rem',
+    fontSize: '1rem',
+    fontWeight: 'bold',
+    color: '#FC4C02',
+    backgroundColor: 'white',
+    border: '2px solid #FC4C02',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+  },
+  secondaryActions: {
+    textAlign: 'center',
+    marginTop: '1rem',
+  },
+  secondaryLink: {
+    fontSize: '0.875rem',
+    color: '#2196F3',
+    textDecoration: 'underline',
+    cursor: 'pointer',
+  },
+  usageNote: {
+    marginTop: '1.5rem',
+    padding: '0.75rem',
+    fontSize: '0.75rem',
+    color: '#888',
+    textAlign: 'center',
+    backgroundColor: 'rgba(255,255,255,0.5)',
+    borderRadius: '4px',
+  },
+  uploadArea: {
+    transition: 'all 0.3s ease',
+  },
+  uploadAreaSubordinate: {
+    opacity: 0.7,
+    marginTop: '2rem',
+    paddingTop: '2rem',
+    borderTop: '1px solid #e0e0e0',
+  },
+  mutedHelperText: {
+    marginTop: '0.5rem',
+    fontSize: '0.75rem',
+    color: '#aaa',
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
 };
