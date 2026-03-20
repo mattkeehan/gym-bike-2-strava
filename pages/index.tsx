@@ -15,6 +15,7 @@ export default function Home() {
   const [error, setError] = useState<string>('');
   const [manualEdit, setManualEdit] = useState(false);
   const [showOCRFallback, setShowOCRFallback] = useState(false);
+  const [usedBasicExtraction, setUsedBasicExtraction] = useState(false);
   
   // Editable fields
   const [editDuration, setEditDuration] = useState('');
@@ -138,6 +139,7 @@ export default function Home() {
       setError('');
       setManualEdit(false);
       setShowOCRFallback(false);
+      setUsedBasicExtraction(false);
       
       // Create preview URL
       const url = URL.createObjectURL(selectedFile);
@@ -227,6 +229,45 @@ ${aiResult.notes || ''}`);
       return parseInt(match[1]) * 60 + parseInt(match[2]);
     }
     return undefined;
+  };
+
+  const handleBasicExtract = async () => {
+    if (!file) {
+      setError('Please select an image first');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    setShowOCRFallback(false);
+    setUsedBasicExtraction(false);
+
+    try {
+      // Extract text using OCR (basic fallback method)
+      const text = await extractTextFromImage(file);
+      setExtractedText(text);
+
+      // Parse the extracted text
+      const parsedMetrics = parseWorkoutMetrics(text);
+      
+      if (!parsedMetrics) {
+        setError('Could not parse workout metrics. Please use manual entry below.');
+        setManualEdit(true);
+        setUsedBasicExtraction(true);
+        return;
+      }
+
+      setMetrics(parsedMetrics);
+      populateEditFields(parsedMetrics);
+      setUsedBasicExtraction(true);
+    } catch (err) {
+      setError('Failed to extract workout data. Please use manual entry.');
+      setManualEdit(true);
+      setUsedBasicExtraction(true);
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const populateEditFields = (m: WorkoutMetrics) => {
@@ -476,6 +517,33 @@ ${aiResult.notes || ''}`);
           <div style={styles.helperText}>
             {hasUsedAI() ? 'Free daily AI extraction limit reached' : 'Uses AI for better results on most machines'}
           </div>
+
+          {hasUsedAI() && file && (
+            <div style={styles.basicExtractionLink}>
+              <a onClick={handleBasicExtract} style={styles.link}>
+                Use basic extraction instead
+              </a>
+            </div>
+          )}
+
+          {usedBasicExtraction && (
+            <div style={styles.basicExtractionMessage}>
+              <p style={styles.basicExtractionText}>
+                Using basic extraction — results may be less accurate.
+              </p>
+              <p style={styles.basicExtractionText}>
+                If you need better results or have ideas, feel free to reach out:<br />
+                👉 <a 
+                  href="https://www.linkedin.com/in/matt-keehan-5910714/" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  style={styles.linkedInLink}
+                >
+                  https://www.linkedin.com/in/matt-keehan-5910714/
+                </a>
+              </p>
+            </div>
+          )}
 
           {error && (
             <div style={styles.error}>
@@ -771,6 +839,18 @@ ${aiResult.notes || ''}`);
             </details>
           )}
         </div>
+
+        <footer style={styles.footer}>
+          Built by{' '}
+          <a 
+            href="https://www.linkedin.com/in/matt-keehan-5910714/" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            style={styles.footerLink}
+          >
+            Matt Keehan
+          </a>
+        </footer>
       </main>
     </>
   );
@@ -1075,5 +1155,48 @@ const styles: { [key: string]: React.CSSProperties } = {
     lineHeight: '1',
     opacity: 0.7,
     transition: 'opacity 0.2s',
+  },
+  basicExtractionLink: {
+    marginTop: '0.75rem',
+    textAlign: 'center',
+  },
+  link: {
+    fontSize: '0.875rem',
+    color: '#2196F3',
+    textDecoration: 'underline',
+    cursor: 'pointer',
+    transition: 'color 0.2s',
+  },
+  basicExtractionMessage: {
+    marginTop: '1.5rem',
+    padding: '1rem',
+    backgroundColor: '#f0f7ff',
+    border: '1px solid #90caf9',
+    borderRadius: '4px',
+  },
+  basicExtractionText: {
+    margin: '0.5rem 0',
+    fontSize: '0.875rem',
+    color: '#1565c0',
+    lineHeight: '1.5',
+  },
+  linkedInLink: {
+    color: '#2196F3',
+    textDecoration: 'underline',
+    fontWeight: '500',
+  },
+  footer: {
+    marginTop: '3rem',
+    paddingTop: '2rem',
+    borderTop: '1px solid #e0e0e0',
+    textAlign: 'center',
+    fontSize: '0.875rem',
+    color: '#888',
+  },
+  footerLink: {
+    color: '#2196F3',
+    textDecoration: 'none',
+    fontWeight: '500',
+    transition: 'color 0.2s',
   },
 };
