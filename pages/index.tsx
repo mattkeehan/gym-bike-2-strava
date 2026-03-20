@@ -1,65 +1,10 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import { Analytics } from "@vercel/analytics/next"
 import { extractTextFromImage } from '../lib/ocr';
 import { parseWorkoutMetrics } from '../lib/parser';
 import { generateTCX } from '../lib/tcx';
-import { WorkoutMetrics, PowerSample } from '../types';
-
-// Simple power chart component
-function PowerChart({ powerSeries }: { powerSeries: PowerSample[] }) {
-  if (powerSeries.length === 0) return <div>No data</div>;
-
-  const maxWatts = Math.max(...powerSeries.map(s => s.watts));
-  const minWatts = Math.min(...powerSeries.map(s => s.watts));
-  const maxTime = Math.max(...powerSeries.map(s => s.time));
-  
-  const width = 600;
-  const height = 200;
-  const padding = 40;
-  
-  const xScale = (width - 2 * padding) / maxTime;
-  const yScale = (height - 2 * padding) / (maxWatts - minWatts || 1);
-  
-  const points = powerSeries.map(s => {
-    const x = padding + s.time * xScale;
-    const y = height - padding - (s.watts - minWatts) * yScale;
-    return `${x},${y}`;
-  }).join(' ');
-  
-  return (
-    <svg width={width} height={height} style={{ background: '#f9f9f9' }}>
-      {/* Axes */}
-      <line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke="#666" />
-      <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="#666" />
-      
-      {/* Grid lines */}
-      {[0, 0.25, 0.5, 0.75, 1].map(ratio => {
-        const y = height - padding - ratio * (height - 2 * padding);
-        const watts = Math.round(minWatts + ratio * (maxWatts - minWatts));
-        return (
-          <g key={ratio}>
-            <line x1={padding} y1={y} x2={width - padding} y2={y} stroke="#ddd" />
-            <text x={5} y={y + 4} fontSize="10" fill="#666">{watts}W</text>
-          </g>
-        );
-      })}
-      
-      {/* Power line */}
-      <polyline
-        points={points}
-        fill="none"
-        stroke="#FC4C02"
-        strokeWidth="2"
-      />
-      
-      {/* Labels */}
-      <text x={width / 2} y={height - 5} fontSize="12" fill="#666" textAnchor="middle">
-        Time (seconds)
-      </text>
-    </svg>
-  );
-}
+import { WorkoutMetrics } from '../types';
 
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
@@ -70,13 +15,6 @@ export default function Home() {
   const [error, setError] = useState<string>('');
   const [manualEdit, setManualEdit] = useState(false);
   const [showOCRFallback, setShowOCRFallback] = useState(false);
-  
-  // Graph extraction state
-  const [cropMode, setCropMode] = useState(false);
-  const [cropBox, setCropBox] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
-  const [cropStart, setCropStart] = useState<{ x: number; y: number } | null>(null);
-  const [extractingGraph, setExtractingGraph] = useState(false);
-  const imageRef = useRef<HTMLImageElement>(null);
   
   // Editable fields
   const [editDuration, setEditDuration] = useState('');
@@ -128,6 +66,27 @@ export default function Home() {
     }
   }, []);
 
+  // AI usage tracking helpers (localStorage-based, daily limit)
+  const getTodayKey = (): string => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `ai-usage-${year}-${month}-${day}`;
+  };
+
+  const hasUsedAI = (): boolean => {
+    if (typeof window === 'undefined') return false;
+    const key = getTodayKey();
+    return localStorage.getItem(key) === 'used';
+  };
+
+  const markAIUsed = (): void => {
+    if (typeof window === 'undefined') return;
+    const key = getTodayKey();
+    localStorage.setItem(key, 'used');
+  };
+
   // Helper to resize image before sending to API (reduces payload size)
   const resizeImageForAPI = async (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -178,8 +137,6 @@ export default function Home() {
       setMetrics(null);
       setError('');
       setManualEdit(false);
-      setCropBox(null);
-      setCropMode(false);
       setShowOCRFallback(false);
       
       // Create preview URL
@@ -191,6 +148,13 @@ export default function Home() {
   const handleExtract = async () => {
     if (!file) {
       setError('Please select an image first');
+      return;
+    }
+
+    // Check if AI was already used today
+    if (hasUsedAI()) {
+      setError('Free AI extraction used today. Try again tomorrow.');
+      setManualEdit(true);
       return;
     }
 
@@ -243,46 +207,14 @@ export default function Home() {
       populateEditFields(parsedMetrics);
       setExtractedText(`AI Extraction (confidence: ${aiResult.confidence ? (aiResult.confidence * 100).toFixed(0) : 'N/A'}%)
 ${aiResult.notes || ''}`);
+      
+      // Mark AI as used for today
+      markAIUsed();
     } catch (err: any) {
       setError('AI extraction didn\'t work for this image.');
       setShowOCRFallback(true);
       setManualEdit(true);
       console.error('AI extraction error:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleBasicExtract = async () => {
-    if (!file) {
-      setError('Please select an image first');
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-    setShowOCRFallback(false);
-
-    try {
-      // Extract text using OCR (basic fallback method)
-      const text = await extractTextFromImage(file);
-      setExtractedText(text);
-
-      // Parse the extracted text
-      const parsedMetrics = parseWorkoutMetrics(text);
-      
-      if (!parsedMetrics) {
-        setError('Could not parse workout metrics. Please use manual entry below.');
-        setManualEdit(true);
-        return;
-      }
-
-      setMetrics(parsedMetrics);
-      populateEditFields(parsedMetrics);
-    } catch (err) {
-      setError('Failed to extract workout data. Please use manual entry.');
-      setManualEdit(true);
-      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -368,105 +300,6 @@ ${aiResult.notes || ''}`);
     }
     
     setError('');
-  };
-
-  // Crop selection handlers
-  const handleImageMouseDown = (e: React.MouseEvent<HTMLImageElement>) => {
-    if (!cropMode || !imageRef.current) return;
-    
-    const rect = imageRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    
-    setCropStart({ x, y });
-    setCropBox(null);
-  };
-
-  const handleImageMouseMove = (e: React.MouseEvent<HTMLImageElement>) => {
-    if (!cropMode || !cropStart || !imageRef.current) return;
-    
-    const rect = imageRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    
-    const width = x - cropStart.x;
-    const height = y - cropStart.y;
-    
-    setCropBox({
-      x: width > 0 ? cropStart.x : x,
-      y: height > 0 ? cropStart.y : y,
-      width: Math.abs(width),
-      height: Math.abs(height),
-    });
-  };
-
-  const handleImageMouseUp = () => {
-    setCropStart(null);
-  };
-
-  const handleExtractGraph = async () => {
-    if (!file || !cropBox || !metrics) {
-      setError('Please crop the power graph area first');
-      return;
-    }
-
-    setExtractingGraph(true);
-    setError('');
-
-    try {
-      // Read file as base64
-      const reader = new FileReader();
-      const fileData = await new Promise<string>((resolve) => {
-        reader.onload = () => resolve(reader.result as string);
-        reader.readAsDataURL(file);
-      });
-
-      // Scale crop box to actual image dimensions
-      const img = imageRef.current;
-      if (!img) throw new Error('Image not loaded');
-      
-      const scaleX = img.naturalWidth / img.clientWidth;
-      const scaleY = img.naturalHeight / img.clientHeight;
-      
-      const scaledCrop = {
-        x: cropBox.x * scaleX,
-        y: cropBox.y * scaleY,
-        width: cropBox.width * scaleX,
-        height: cropBox.height * scaleY,
-      };
-
-      // Call API to extract graph
-      const response = await fetch('/api/extract-graph', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          imageBase64: fileData,
-          crop: scaledCrop,
-          durationSeconds: metrics.durationSeconds,
-          avgWatts: metrics.avgWatts,
-          maxWatts: metrics.maxWatts,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to extract power trace');
-      }
-
-      const data = await response.json();
-      
-      // Update metrics with power series
-      setMetrics({
-        ...metrics,
-        powerSeries: data.powerSeries,
-      });
-      
-      setCropMode(false);
-    } catch (err) {
-      setError('Failed to extract power trace from graph');
-      console.error(err);
-    } finally {
-      setExtractingGraph(false);
-    }
   };
 
 
@@ -631,29 +464,17 @@ ${aiResult.notes || ''}`);
 
           <button
             onClick={handleExtract}
-            disabled={!file || loading}
+            disabled={!file || loading || hasUsedAI()}
             style={{
               ...styles.button,
-              ...((!file || loading) && styles.buttonDisabled),
+              ...((!file || loading || hasUsedAI()) && styles.buttonDisabled),
             }}
           >
-            {loading ? 'Extracting...' : 'Extract Workout'}
+            {loading ? 'Extracting...' : hasUsedAI() ? 'AI used today — try again tomorrow' : 'Extract Workout'}
           </button>
           
           <div style={styles.helperText}>
-            Uses AI for better results on most machines
-          </div>
-
-          <div style={styles.fallbackLink}>
-            <a
-              onClick={handleBasicExtract}
-              style={{
-                ...styles.link,
-                ...((loading || !file) && styles.linkDisabled),
-              }}
-            >
-              Having trouble? Use basic extraction
-            </a>
+            {hasUsedAI() ? 'Free daily AI extraction limit reached' : 'Uses AI for better results on most machines'}
           </div>
 
           {error && (
@@ -665,7 +486,7 @@ ${aiResult.notes || ''}`);
           {showOCRFallback && (
             <div style={styles.fallbackSuggestion}>
               <div style={styles.fallbackSuggestionContent}>
-                <span>Try <a onClick={handleBasicExtract} style={styles.inlineLink}>basic extraction</a> instead, or use manual entry below.</span>
+                <span>Please use manual entry below to input your workout values.</span>
                 <button 
                   onClick={() => setShowOCRFallback(false)}
                   style={styles.dismissButton}
@@ -677,78 +498,17 @@ ${aiResult.notes || ''}`);
             </div>
           )}
 
-          {/* Image preview and graph extraction */}
+          {/* Image preview */}
           {imagePreviewUrl && (
             <div style={styles.imageSection}>
-              <div style={styles.imageHeader}>
-                <h3 style={styles.sectionTitle}>Workout Image</h3>
-                {metrics && !metrics.powerSeries && (
-                  <button
-                    onClick={() => setCropMode(!cropMode)}
-                    style={{
-                      ...styles.toggleButton,
-                      ...(cropMode && styles.toggleButtonActive),
-                    }}
-                  >
-                    {cropMode ? 'Cancel Crop' : 'Select Power Graph'}
-                  </button>
-                )}
-              </div>
-              
-              <div style={{ position: 'relative', display: 'inline-block' }}>
-                <img
-                  ref={imageRef}
-                  src={imagePreviewUrl}
-                  alt="Workout"
-                  style={{
-                    ...styles.previewImage,
-                    ...(cropMode && { cursor: 'crosshair' }),
-                  }}
-                  onMouseDown={handleImageMouseDown}
-                  onMouseMove={handleImageMouseMove}
-                  onMouseUp={handleImageMouseUp}
-                  onMouseLeave={handleImageMouseUp}
-                />
-                
-                {/* Crop box overlay */}
-                {cropBox && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      left: cropBox.x,
-                      top: cropBox.y,
-                      width: cropBox.width,
-                      height: cropBox.height,
-                      border: '2px dashed #FC4C02',
-                      backgroundColor: 'rgba(252, 76, 2, 0.1)',
-                      pointerEvents: 'none',
-                    }}
-                  />
-                )}
-              </div>
-              
-              {cropBox && metrics && (
-                <button
-                  onClick={handleExtractGraph}
-                  disabled={extractingGraph}
-                  style={styles.button}
-                >
-                  {extractingGraph ? 'Extracting...' : 'Infer Power Trace'}
-                </button>
-              )}
+              <h3 style={styles.sectionTitle}>Workout Image</h3>
+              <img
+                src={imagePreviewUrl}
+                alt="Workout"
+                style={styles.previewImage}
+              />
             </div>
           )}
-
-          {/* Power series chart preview */}
-          {metrics?.powerSeries && (
-            <div style={styles.chartSection}>
-              <h3 style={styles.sectionTitle}>Inferred Power Over Time</h3>
-              <div style={styles.chartContainer}>
-                <PowerChart powerSeries={metrics.powerSeries} />
-              </div>
-            </div>
-          )}
-
 
           {(manualEdit || extractedText) && (
             <div style={styles.manualEntry}>
@@ -1217,38 +977,17 @@ const styles: { [key: string]: React.CSSProperties } = {
     backgroundColor: '#f9f9f9',
     borderRadius: '4px',
   },
-  imageHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '1rem',
-  },
   sectionTitle: {
     fontSize: '1rem',
     fontWeight: 'bold',
     margin: 0,
     color: '#333',
   },
-  toggleButtonActive: {
-    backgroundColor: '#FC4C02',
-    color: 'white',
-    borderColor: '#FC4C02',
-  },
   previewImage: {
     maxWidth: '100%',
     height: 'auto',
     borderRadius: '4px',
     display: 'block',
-  },
-  chartSection: {
-    marginTop: '2rem',
-    padding: '1.5rem',
-    backgroundColor: '#f9f9f9',
-    borderRadius: '4px',
-  },
-  chartContainer: {
-    marginTop: '1rem',
-    overflowX: 'auto',
   },
   stravaSection: {
     maxWidth: '600px',
@@ -1311,22 +1050,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: '#888',
     textAlign: 'center',
   },
-  fallbackLink: {
-    marginTop: '1rem',
-    textAlign: 'center',
-  },
-  link: {
-    fontSize: '0.875rem',
-    color: '#2196F3',
-    textDecoration: 'underline',
-    cursor: 'pointer',
-    transition: 'color 0.2s',
-  },
-  linkDisabled: {
-    color: '#ccc',
-    cursor: 'not-allowed',
-    textDecoration: 'none',
-  },
   fallbackSuggestion: {
     marginTop: '1rem',
     padding: '1rem',
@@ -1341,12 +1064,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '1rem',
     color: '#e65100',
     fontSize: '0.875rem',
-  },
-  inlineLink: {
-    color: '#2196F3',
-    textDecoration: 'underline',
-    cursor: 'pointer',
-    fontWeight: '500',
   },
   dismissButton: {
     background: 'none',
