@@ -55,13 +55,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       baseURL: process.env.AI_GATEWAY_BASE_URL,
     });
 
-    // Prepare the image data URL
-    let imageDataUrl: string;
+    // Prepare the image data
+    let base64Data: string;
     if (imageBase64.startsWith('data:')) {
-      imageDataUrl = imageBase64;
+      // Extract base64 content after the comma
+      base64Data = imageBase64.split(',')[1];
     } else {
-      imageDataUrl = `data:${mimeType};base64,${imageBase64}`;
+      base64Data = imageBase64;
     }
+
+    // Convert to buffer for AI SDK
+    const imageBuffer = Buffer.from(base64Data, 'base64');
 
     // Call AI to extract workout metrics
     const result = await generateObject({
@@ -138,7 +142,7 @@ Extract only the numbers associated with final workout summary metrics.`,
             },
             {
               type: 'image',
-              image: imageDataUrl,
+              image: imageBuffer,
             },
           ],
         },
