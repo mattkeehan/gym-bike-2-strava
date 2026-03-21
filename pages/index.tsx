@@ -7,7 +7,6 @@ import { WorkoutMetrics } from '../types';
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string>('');
-  const [resizedImageData, setResizedImageData] = useState<string>('');
   const [extractedText, setExtractedText] = useState<string>('');
   const [metrics, setMetrics] = useState<WorkoutMetrics | null>(null);
   const [loading, setLoading] = useState(false);
@@ -138,7 +137,6 @@ export default function Home() {
       setMetrics(null);
       setError('');
       setManualEdit(false);
-      setResizedImageData('');
       
       // Create preview URL
       const url = URL.createObjectURL(selectedFile);
@@ -165,9 +163,6 @@ export default function Home() {
     try {
       // Resize image to reduce payload size
       const resizedImageData = await resizeImageForAPI(file);
-      
-      // Store resized image for later use (e.g., Strava upload)
-      setResizedImageData(resizedImageData);
 
       // Call AI extraction API (now the default)
       const response = await fetch('/api/extract-ai', {
@@ -313,7 +308,6 @@ ${aiResult.notes || ''}`);
     // Reset to allow uploading another photo
     setFile(null);
     setImagePreviewUrl('');
-    setResizedImageData('');
     setMetrics(null);
     setExtractedText('');
     setError('');
@@ -367,9 +361,6 @@ ${aiResult.notes || ''}`);
         description = `Duration: ${Math.floor(metrics.durationSeconds / 60)}:${(metrics.durationSeconds % 60).toString().padStart(2, '0')} | Pace: ${pace} | Distance: ${distance}`;
       }
 
-      // Use the resized image (same one sent to AI extraction)
-      const photoBase64 = resizedImageData || imagePreviewUrl;
-
       const response = await fetch('/api/strava/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -377,7 +368,6 @@ ${aiResult.notes || ''}`);
           tcxContent,
           name,
           description,
-          photo: photoBase64,
         }),
       });
 
