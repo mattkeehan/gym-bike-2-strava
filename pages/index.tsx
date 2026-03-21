@@ -1,8 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
 import { Analytics } from "@vercel/analytics/next"
-import { extractTextFromImage } from '../lib/ocr';
-import { parseWorkoutMetrics } from '../lib/parser';
 import { generateTCX } from '../lib/tcx';
 import { WorkoutMetrics } from '../types';
 
@@ -14,8 +12,6 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [manualEdit, setManualEdit] = useState(false);
-  const [showOCRFallback, setShowOCRFallback] = useState(false);
-  const [usedBasicExtraction, setUsedBasicExtraction] = useState(false);
   
   // Ref for scrolling to results after successful extraction
   const resultsRef = useRef<HTMLDivElement>(null);
@@ -141,8 +137,6 @@ export default function Home() {
       setMetrics(null);
       setError('');
       setManualEdit(false);
-      setShowOCRFallback(false);
-      setUsedBasicExtraction(false);
       
       // Create preview URL
       const url = URL.createObjectURL(selectedFile);
@@ -165,7 +159,6 @@ export default function Home() {
 
     setLoading(true);
     setError('');
-    setShowOCRFallback(false);
 
     try {
       // Resize image to reduce payload size
@@ -222,7 +215,6 @@ ${aiResult.notes || ''}`);
       }, 100);
     } catch (err: any) {
       setError('AI extraction didn\'t work for this image.');
-      setShowOCRFallback(true);
       setManualEdit(true);
       console.error('AI extraction error:', err);
     } finally {
@@ -237,45 +229,6 @@ ${aiResult.notes || ''}`);
       return parseInt(match[1]) * 60 + parseInt(match[2]);
     }
     return undefined;
-  };
-
-  const handleBasicExtract = async () => {
-    if (!file) {
-      setError('Please select an image first');
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-    setShowOCRFallback(false);
-    setUsedBasicExtraction(false);
-
-    try {
-      // Extract text using OCR (basic fallback method)
-      const text = await extractTextFromImage(file);
-      setExtractedText(text);
-
-      // Parse the extracted text
-      const parsedMetrics = parseWorkoutMetrics(text);
-      
-      if (!parsedMetrics) {
-        setError('Could not parse workout metrics. Please use manual entry below.');
-        setManualEdit(true);
-        setUsedBasicExtraction(true);
-        return;
-      }
-
-      setMetrics(parsedMetrics);
-      populateEditFields(parsedMetrics);
-      setUsedBasicExtraction(true);
-    } catch (err) {
-      setError('Failed to extract workout data. Please use manual entry.');
-      setManualEdit(true);
-      setUsedBasicExtraction(true);
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
   };
 
   const populateEditFields = (m: WorkoutMetrics) => {
@@ -359,8 +312,6 @@ ${aiResult.notes || ''}`);
     setExtractedText('');
     setError('');
     setManualEdit(false);
-    setShowOCRFallback(false);
-    setUsedBasicExtraction(false);
     setUploadStatus('');
     setStravaActivityId(null);
   };
@@ -410,6 +361,16 @@ ${aiResult.notes || ''}`);
         description = `Duration: ${Math.floor(metrics.durationSeconds / 60)}:${(metrics.durationSeconds % 60).toString().padStart(2, '0')} | Pace: ${pace} | Distance: ${distance}`;
       }
 
+      // Include workout photo
+      let photoBase64 = imagePreviewUrl;
+      if (file && !imagePreviewUrl.startsWith('data:')) {
+        const reader = new FileReader();
+        photoBase64 = await new Promise<string>((resolve) => {
+          reader.onload = () => resolve(reader.result as string);
+          reader.readAsDataURL(file);
+        });
+      }
+
       const response = await fetch('/api/strava/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -417,6 +378,7 @@ ${aiResult.notes || ''}`);
           tcxContent,
           name,
           description,
+          photo: photoBase64,
         }),
       });
 
@@ -490,6 +452,16 @@ ${aiResult.notes || ''}`);
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png?v=2" />
         <link rel="apple-touch-icon" href="/favicon.png?v=2" />
+        <style>{`
+          @keyframes successGlow {
+            0%, 100% {
+              box-shadow: 0 0 20px rgba(76, 175, 80, 0.4);
+            }
+            50% {
+              box-shadow: 0 0 30px rgba(76, 175, 80, 0.7);
+            }
+          }
+        `}</style>
       </Head>
 
       <main style={styles.main}>
@@ -587,7 +559,7 @@ ${aiResult.notes || ''}`);
                     onClick={handleUploadToStrava}
                     disabled={uploadingToStrava}
                     style={{
-                      ...styles.primaryButton,
+                      ...styles.primaryButtonFullWidth,
                       ...(uploadingToStrava && styles.buttonDisabled),
                     }}
                   >
@@ -596,23 +568,20 @@ ${aiResult.notes || ''}`);
                 ) : (
                   <button
                     onClick={handleConnectStrava}
-                    style={styles.primaryButton}
+                    style={styles.primaryButtonFullWidth}
                   >
                     Connect to Strava
                   </button>
                 )}
-                
-                <button
-                  onClick={handleDownloadTCX}
-                  style={styles.secondaryButton}
-                >
-                  Download TCX
-                </button>
               </div>
 
               <div style={styles.secondaryActions}>
                 <a onClick={handleUploadAnother} style={styles.secondaryLink}>
                   Upload another photo
+                </a>
+                {' · '}
+                <a onClick={handleDownloadTCX} style={styles.downloadLink}>
+                  Download TCX
                 </a>
               </div>
 
@@ -634,107 +603,45 @@ ${aiResult.notes || ''}`);
                   )}
                 </div>
               )}
-
-              {/* Muted AI usage note */}
-              {hasUsedAI() && (
-                <div style={styles.usagNote}>
-                  Free AI extraction used for today. You can still upload this workout to Strava.
-                </div>
-              )}
             </div>
           )}
 
-          {/* Upload section - de-emphasized after success */}
-          <div style={{
-            ...styles.uploadArea,
-            ...(metrics && styles.uploadAreaSubordinate),
-          }}>
-            <div style={styles.uploadSection}>
-              <label htmlFor="file-upload" style={styles.uploadLabel}>
-                {file ? file.name : 'Choose Image'}
-              </label>
-              <input
-                id="file-upload"
-                type="file"
-                accept="image/*"
-                onChange={handleFileChange}
-                style={styles.fileInput}
-              />
-            </div>
-
-            {!metrics && (
-              <>
-                <button
-                  onClick={handleExtract}
-                  disabled={!file || loading || hasUsedAI()}
-                  style={{
-                    ...styles.button,
-                    ...((!file || loading || hasUsedAI()) && styles.buttonDisabled),
-                  }}
-                >
-                  {loading ? 'Extracting...' : hasUsedAI() ? 'AI used today — try again tomorrow' : 'Extract Workout'}
-                </button>
-                
-                <div style={styles.helperText}>
-                  {hasUsedAI() ? 'Free daily AI extraction limit reached' : 'Uses AI for better results on most machines'}
-                </div>
-
-                {hasUsedAI() && file && (
-                  <div style={styles.basicExtractionLink}>
-                    <a onClick={handleBasicExtract} style={styles.link}>
-                      Use basic extraction instead
-                    </a>
-                  </div>
-                )}
-              </>
-            )}
-
-            {metrics && (
-              <div style={styles.mutedHelperText}>
-                {hasUsedAI() 
-                  ? 'Upload another photo tomorrow for free AI extraction' 
-                  : 'Upload complete'}
+          {/* Upload section - only show if no metrics yet */}
+          {!metrics && (
+            <div style={styles.uploadArea}>
+              <div style={styles.uploadSection}>
+                <label htmlFor="file-upload" style={styles.uploadLabel}>
+                  {file ? file.name : 'Choose Image'}
+                </label>
+                <input
+                  id="file-upload"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileChange}
+                  style={styles.fileInput}
+                />
               </div>
-            )}
-          </div>
 
-          {usedBasicExtraction && (
-            <div style={styles.basicExtractionMessage}>
-              <p style={styles.basicExtractionText}>
-                Using basic extraction — results may be less accurate.
-              </p>
-              <p style={styles.basicExtractionText}>
-                If you need better results or have ideas, feel free to reach out:<br />
-                👉 <a 
-                  href="https://www.linkedin.com/in/matt-keehan-5910714/" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  style={styles.linkedInLink}
-                >
-                  https://www.linkedin.com/in/matt-keehan-5910714/
-                </a>
-              </p>
+              <button
+                onClick={handleExtract}
+                disabled={!file || loading || hasUsedAI()}
+                style={{
+                  ...styles.button,
+                  ...((!file || loading || hasUsedAI()) && styles.buttonDisabled),
+                }}
+              >
+                {loading ? 'Extracting...' : hasUsedAI() ? 'AI used today — try again tomorrow' : 'Extract Workout'}
+              </button>
+              
+              <div style={styles.helperText}>
+                {hasUsedAI() ? 'Free daily AI extraction limit reached' : 'Uses AI for better results on most machines'}
+              </div>
             </div>
           )}
 
           {error && (
             <div style={styles.error}>
               {error}
-            </div>
-          )}
-
-          {showOCRFallback && (
-            <div style={styles.fallbackSuggestion}>
-              <div style={styles.fallbackSuggestionContent}>
-                <span>Please use manual entry below to input your workout values.</span>
-                <button 
-                  onClick={() => setShowOCRFallback(false)}
-                  style={styles.dismissButton}
-                  aria-label="Dismiss"
-                >
-                  ✕
-                </button>
-              </div>
             </div>
           )}
 
@@ -898,14 +805,14 @@ ${aiResult.notes || ''}`);
         </div>
 
         <footer style={styles.footer}>
-          Built by{' '}
+          Want to upload more than one workout each day?{' '}
           <a 
             href="https://www.linkedin.com/in/matt-keehan-5910714/" 
             target="_blank" 
             rel="noopener noreferrer"
             style={styles.footerLink}
           >
-            Matt Keehan
+            Contact me
           </a>
         </footer>
       </main>
@@ -1187,61 +1094,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: '#888',
     textAlign: 'center',
   },
-  fallbackSuggestion: {
-    marginTop: '1rem',
-    padding: '1rem',
-    backgroundColor: '#fff3e0',
-    border: '1px solid #ff9800',
-    borderRadius: '4px',
-  },
-  fallbackSuggestionContent: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: '1rem',
-    color: '#e65100',
-    fontSize: '0.875rem',
-  },
-  dismissButton: {
-    background: 'none',
-    border: 'none',
-    color: '#e65100',
-    fontSize: '1.25rem',
-    cursor: 'pointer',
-    padding: '0',
-    lineHeight: '1',
-    opacity: 0.7,
-    transition: 'opacity 0.2s',
-  },
-  basicExtractionLink: {
-    marginTop: '0.75rem',
-    textAlign: 'center',
-  },
-  link: {
-    fontSize: '0.875rem',
-    color: '#2196F3',
-    textDecoration: 'underline',
-    cursor: 'pointer',
-    transition: 'color 0.2s',
-  },
-  basicExtractionMessage: {
-    marginTop: '1.5rem',
-    padding: '1rem',
-    backgroundColor: '#f0f7ff',
-    border: '1px solid #90caf9',
-    borderRadius: '4px',
-  },
-  basicExtractionText: {
-    margin: '0.5rem 0',
-    fontSize: '0.875rem',
-    color: '#1565c0',
-    lineHeight: '1.5',
-  },
-  linkedInLink: {
-    color: '#2196F3',
-    textDecoration: 'underline',
-    fontWeight: '500',
-  },
   footer: {
     marginTop: '3rem',
     paddingTop: '2rem',
@@ -1262,7 +1114,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     backgroundColor: '#f0f7ff',
     border: '2px solid #90caf9',
     borderRadius: '8px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+    boxShadow: '0 0 20px rgba(76, 175, 80, 0.4)',
+    animation: 'successGlow 2s ease-in-out infinite',
   },
   successTitle: {
     fontSize: '1.5rem',
@@ -1310,17 +1163,17 @@ const styles: { [key: string]: React.CSSProperties } = {
     cursor: 'pointer',
     transition: 'background-color 0.2s',
   },
-  secondaryButton: {
-    flex: 1,
+  primaryButtonFullWidth: {
+    width: '100%',
     padding: '1rem',
     fontSize: '1rem',
     fontWeight: 'bold',
-    color: '#FC4C02',
-    backgroundColor: 'white',
-    border: '2px solid #FC4C02',
+    color: 'white',
+    backgroundColor: '#FC4C02',
+    border: 'none',
     borderRadius: '4px',
     cursor: 'pointer',
-    transition: 'all 0.2s',
+    transition: 'background-color 0.2s',
   },
   secondaryActions: {
     textAlign: 'center',
@@ -1332,29 +1185,13 @@ const styles: { [key: string]: React.CSSProperties } = {
     textDecoration: 'underline',
     cursor: 'pointer',
   },
-  usageNote: {
-    marginTop: '1.5rem',
-    padding: '0.75rem',
+  downloadLink: {
     fontSize: '0.75rem',
-    color: '#888',
-    textAlign: 'center',
-    backgroundColor: 'rgba(255,255,255,0.5)',
-    borderRadius: '4px',
+    color: '#999',
+    textDecoration: 'underline',
+    cursor: 'pointer',
   },
   uploadArea: {
     transition: 'all 0.3s ease',
-  },
-  uploadAreaSubordinate: {
-    opacity: 0.7,
-    marginTop: '2rem',
-    paddingTop: '2rem',
-    borderTop: '1px solid #e0e0e0',
-  },
-  mutedHelperText: {
-    marginTop: '0.5rem',
-    fontSize: '0.75rem',
-    color: '#aaa',
-    textAlign: 'center',
-    fontStyle: 'italic',
   },
 };
