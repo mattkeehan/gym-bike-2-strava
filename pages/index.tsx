@@ -7,7 +7,6 @@ import { WorkoutMetrics } from '../types';
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string>('');
-  const [extractedText, setExtractedText] = useState<string>('');
   const [metrics, setMetrics] = useState<WorkoutMetrics | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
@@ -133,7 +132,6 @@ export default function Home() {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
       setFile(selectedFile);
-      setExtractedText('');
       setMetrics(null);
       setError('');
       setManualEdit(false);
@@ -203,8 +201,6 @@ export default function Home() {
 
       setMetrics(parsedMetrics);
       populateEditFields(parsedMetrics);
-      setExtractedText(`AI Extraction (confidence: ${aiResult.confidence ? (aiResult.confidence * 100).toFixed(0) : 'N/A'}%)
-${aiResult.notes || ''}`);
       
       // Mark AI as used for today
       markAIUsed();
@@ -309,7 +305,6 @@ ${aiResult.notes || ''}`);
     setFile(null);
     setImagePreviewUrl('');
     setMetrics(null);
-    setExtractedText('');
     setError('');
     setManualEdit(false);
     setUploadStatus('');
@@ -646,7 +641,7 @@ ${aiResult.notes || ''}`);
             </div>
           )}
 
-          {(manualEdit || extractedText) && (
+          {manualEdit && (
             <div style={styles.manualEntry}>
               <div style={styles.manualHeader}>
                 <h3 style={styles.manualTitle}>Manual Entry / Edit Values</h3>
@@ -784,13 +779,6 @@ ${aiResult.notes || ''}`);
               )}
             </div>
           )}
-
-          {extractedText && (
-            <details style={styles.details}>
-              <summary style={styles.summary}>View Extracted Text</summary>
-              <pre style={styles.pre}>{extractedText}</pre>
-            </details>
-          )}
         </div>
 
         <footer style={styles.footer}>
@@ -919,24 +907,6 @@ const styles: { [key: string]: React.CSSProperties } = {
   metricValue: {
     fontWeight: 'bold',
     color: '#333',
-  },
-  details: {
-    marginTop: '1.5rem',
-  },
-  summary: {
-    cursor: 'pointer',
-    fontWeight: '500',
-    color: '#666',
-    marginBottom: '0.5rem',
-  },
-  pre: {
-    backgroundColor: '#f5f5f5',
-    padding: '1rem',
-    borderRadius: '4px',
-    overflow: 'auto',
-    fontSize: '0.875rem',
-    whiteSpace: 'pre-wrap',
-    wordBreak: 'break-word',
   },
   manualEntry: {
     marginTop: '1.5rem',
