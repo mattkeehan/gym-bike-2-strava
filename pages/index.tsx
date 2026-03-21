@@ -451,7 +451,7 @@ export default function Home() {
       <main style={styles.main}>
         <h1 style={styles.title}>Gym Bike & Treadmill summary photo to Strava</h1>
         <p style={styles.subtitle}>
-          Upload a photo of your workout screen and push it straight to your Strava activities, or download a compatible TCX file
+          Upload a photo of your workout screen and AI will extract the data for you!
         </p>
         
         {/* Strava connection status */}
@@ -616,10 +616,6 @@ export default function Home() {
               >
                 {loading ? 'Extracting...' : hasUsedAI() ? 'AI used today — try again tomorrow' : 'Extract Workout'}
               </button>
-              
-              <div style={styles.helperText}>
-                {hasUsedAI() ? 'Free daily AI extraction limit reached' : 'Uses AI for better results on most machines'}
-              </div>
             </div>
           )}
 
