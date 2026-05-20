@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
+import Link from 'next/link';
 import { Analytics } from "@vercel/analytics/next"
 import { generateTCX } from '../lib/tcx';
 import { WorkoutMetrics } from '../types';
@@ -778,15 +779,24 @@ export default function Home() {
         </div>
 
         <footer style={styles.footer}>
-          Want to upload more than one workout each day?{' '}
-          <a 
-            href="https://www.linkedin.com/in/matt-keehan-5910714/" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            style={styles.footerLink}
-          >
-            Contact me
-          </a>
+          <div style={styles.footerMain}>
+            Want to upload more than one workout each day?{' '}
+            <a 
+              href="https://www.linkedin.com/in/matt-keehan-5910714/" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              style={styles.footerLink}
+            >
+              Contact me
+            </a>
+          </div>
+          <div style={styles.footerLinks}>
+            <Link href="/privacy" style={styles.footerLegalLink}>Privacy</Link>
+            <span style={styles.footerSeparator}>•</span>
+            <Link href="/terms" style={styles.footerLegalLink}>Terms</Link>
+            <span style={styles.footerSeparator}>•</span>
+            <span style={styles.footerBuiltBy}>Built by Matt Keehan</span>
+          </div>
         </footer>
       </main>
     </>
@@ -1056,6 +1066,25 @@ const styles: { [key: string]: React.CSSProperties } = {
     textAlign: 'center',
     fontSize: '0.875rem',
     color: '#888',
+  },
+  footerMain: {
+    marginBottom: '1rem',
+  },
+  footerLinks: {
+    marginTop: '1rem',
+    fontSize: '0.8rem',
+    color: '#999',
+  },
+  footerLegalLink: {
+    color: '#FC4C02',
+    textDecoration: 'none',
+  },
+  footerSeparator: {
+    margin: '0 0.5rem',
+    color: '#ccc',
+  },
+  footerBuiltBy: {
+    color: '#999',
   },
   footerLink: {
     color: '#2196F3',
